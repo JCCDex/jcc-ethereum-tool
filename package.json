@@ -1,0 +1,74 @@
+{
+  "name": "jcc-ethereum-tool",
+  "version": "0.0.3",
+  "description": "jccdex jcc ethereum tool",
+  "files": [
+    "lib"
+  ],
+  "main": "lib/index.js",
+  "scripts": {
+    "deploy": "./publish.sh",
+    "test": "gulp",
+    "pretty": "prettier --write {src,test}/**/*.{js,ts} erc20abi.json"
+  },
+  "bin": {
+    "jcc-ethereum-tool": "src/jcc-ethereum-tool",
+    "jcc-ethereum-keystore.js": "src/jcc-ethereum-keystore.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JCCDex/jcc-ethereum-tool.git"
+  },
+  "keywords": [
+    "tool",
+    "console",
+    "jcc",
+    "ethereum",
+    "decentralized",
+    "cross-chain"
+  ],
+  "author": "JCCDex",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JCCDex/jcc-ethereum-tool/issues"
+  },
+  "homepage": "https://github.com/JCCDex/jcc-ethereum-tool#readme",
+  "dependencies": {
+    "bignumber.js": "^9.0.0",
+    "commander": "^2.20.0",
+    "eth-ens-namehash": "^2.0.8",
+    "ethereumjs-util": "^6.1.0",
+    "ethereumjs-wallet": "^0.6.3",
+    "ethers": "^4.0.37",
+    "fs": "0.0.1-security",
+    "jcc-ethereum-utils": "^0.1.14",
+    "readline-sync": "^1.4.9"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.3.3",
+    "@babel/plugin-transform-runtime": "^7.2.0",
+    "@babel/preset-env": "^7.3.1",
+    "@babel/runtime": "^7.4.2",
+    "babel-eslint": "^8.2.6",
+    "chai": "^4.2.0",
+    "coveralls": "^3.0.2",
+    "eslint-config-standard": "^11.0.0",
+    "eslint-plugin-import": "^2.16.0",
+    "eslint-plugin-node": "^7.0.1",
+    "eslint-plugin-promise": "^4.0.1",
+    "eslint-plugin-standard": "^3.1.0",
+    "gulp": "^4.0.0",
+    "gulp-babel": "^8.0.0",
+    "gulp-eslint": "^5.0.0",
+    "husky": "^3.1.0",
+    "mocha": "^5.2.0",
+    "nyc": "^14.1.1",
+    "prettier": "^1.19.1",
+    "pretty-quick": "^2.0.1"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "pretty-quick --staged"
+    }
+  }
+}

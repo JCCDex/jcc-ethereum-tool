@@ -1,0 +1,347 @@
+#!/usr/bin/env node
+
+const program = require("commander");
+const fs = require("fs");
+const BigNumber = require("bignumber.js");
+const utils = require("jcc-ethereum-utils");
+const Keystore = require("./jcc-ethereum-keystore");
+// const SolidityFunction = require("chain3/lib/chain3/function");
+const ethers = require("ethers");
+const abiCoder = ethers.utils.defaultAbiCoder;
+const eth_ens_namehash = require('eth-ens-namehash');
+
+function getBaseHome() {
+  return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
+}
+
+program.version("0.0.1");
+program.usage("--help", "Show ethereum-tools help");
+
+let _description = "ETH command line tools";
+program.description(_description);
+
+program.option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json");
+
+program.option("--wallet_create", "Create new ETH wallet");
+program.option("--save_wallet", "save wallet to keystore file when create");
+program.option("--import_private_to_keystore", "import private key to keystore file");
+program.option("--keystore <keystore file>", "keystore file path");
+program.option("--password <keystore file password>", "keystore password");
+
+program.option("--network <network id>", "specified ETH network id, mainnet is 99, testnet is 101");
+program.option("--server <ETH node address>", "node rpc address");
+
+program.option("--block <block number>", "get block info by number or latest");
+program.option("--transaction <hash>", "get transaction by hash");
+program.option("--receipt <hash>", "get transaction receipt by hash");
+
+program.option("--balance <Wallet address>", "get balance of address");
+program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
+program.option("--amount <amount>", "transfer amount");
+
+program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
+
+program.option("--nonce <number>", "specified nonce");
+program.option("--getNonce", "get current nonce");
+program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
+program.option("--gas_limit <number>", "specified gas limit, default 50000");
+
+program.option("--erc20 <string>", "erc20 address");
+program.option("--erc721 <string>", "erc721 address");
+program.option("--fingate <string>", "fingate address");
+
+program.option("--abi <contract json file>", "abi definition");
+program.option("--contractAddr <contract address>", "contract address");
+
+program.option("--method <string>", "specified contract method name");
+program.option("--parameters <string>", "specified contract parameters which seprator by |");
+
+program.parse(process.argv);
+
+
+if (program.wallet_create) {
+  if (!program.save_wallet) {
+    Keystore.processCreateWallet();
+  }
+
+  Keystore.saveKeystore();
+
+  return;
+}
+
+if (program.import_private_to_keystore) {
+  Keystore.importToKeystore();
+  return;
+}
+
+function getNetwork(_network) {
+  let type = typeof _network;
+  if (type === "number") {
+    _options.network = _network;
+  }
+  if (type === "string") {
+    _options.network = _network.toLowerCase() === "main" ? 1 : 3;
+  }
+}
+
+// 获取配置文件
+let _config = program.config;
+let _options = { network: 3 };
+
+// 如果文件位置没有通过参数传递
+if (!!!_config) {
+  _config = getBaseHome() + "/config.json";
+}
+if (!fs.existsSync(_config)) {
+  console.log("can not get", _config, "file, create it manula!");
+  process.exit();
+}
+
+// 读取文件
+try {
+  _options = Object.assign(_options, JSON.parse(fs.readFileSync(_config, "utf-8")));
+  if (!_options.gasLimit) {
+    _options.gasLimit = 50000;
+  }
+  if (!_options.gasPrice) {
+    // 10G
+    _options.gasPrice = 10000000000;
+  }
+} catch (e) {
+  console.log("Parse config file fail, check and correct it", e);
+  process.exit();
+}
+
+getNetwork(program.network);
+
+if (program.keystore) {
+  _options.wallet = Object.assign(_options.wallet, Keystore.getWalletFromKeystore(program.keystore, program.password));
+}
+
+if (!isNaN(Number(program.gas_limit))) {
+  _options.gasLimit = Number(program.gas_limit);
+}
+if (!isNaN(Number(program.gas_price))) {
+  _options.gasPrice = Number(program.gas_price);
+}
+if (!!program.server) {
+  _options.server = program.server;
+}
+
+async function getBalance() {
+  let balance = await inst.getBalance(program.balance);
+  console.log("balance:", balance);
+}
+async function getCurrentNonce(address) {
+  let nonce = await inst.getNonce(address);
+  console.log("current nonce:", nonce.toString());
+}
+
+async function getBlock(block) {
+  let info = await inst.getBlock(block);
+  console.log("block:", JSON.stringify(info, null, 2));
+}
+
+async function getTransaction(hash) {
+  let info = await inst.getTransaction(hash);
+  console.log("transaction:", JSON.stringify(info, null, 2));
+}
+
+async function getTransactionReceipt(hash) {
+  let info = await inst.getTransactionReceipt(hash);
+  console.log("transaction receipt:", JSON.stringify(info, null, 2));
+}
+async function getNonce(address) {
+  if (!program.nonce) {
+    let n = await inst.getNonce(_options.wallet.address);
+    return n;
+  }
+  return program.nonce;
+}
+async function transfer(dest, amount) {
+  let nonce = await getNonce(_options.wallet.address);
+  let gasPrice = await inst.getGasPrice(_options.gasPrice);
+  let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
+  console.log(tx);
+  let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+  console.log("transfer hash:", hash);
+}
+
+const sleep = (milliseconds) => {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+};
+
+function getFile(filename) {
+  if (!fs.existsSync(filename)) {
+    filename = __dirname + "/" + filename;
+    if (!fs.existsSync(filename)) {
+      console.log("can not find ", filename);
+      process.exit();
+    }
+  }
+  try {
+    return JSON.parse(fs.readFileSync(filename, "utf-8"));
+  } catch (e) {
+    console.log("get file ", filename, "error", e);
+    process.exit(-1);
+  }
+}
+
+async function deploy(compiledJson) {
+  let _json = getFile(compiledJson);
+  if (!_json.bytecode) {
+    console.log("can not get byte code");
+    process.exit(-1);
+  }
+
+  let abi = _json.abi;
+  let constructor = abi.find((item) => item.type == "constructor");
+  if (!constructor) {
+    console.log("Can not find constructor in file", compiledJson, ", Please check it!");
+  }
+  if (constructor.inputs.length > 0 && !program.parameters) {
+    console.log("miss --parameter arguments");
+    process.exit();
+  }
+  let calldata;
+  if (constructor.inputs.length == 0) {
+    program.parameters = [];
+    calldata = _json.bytecode;
+  } else {
+    const typename = constructor.inputs.map((input) => input.type);
+    calldata = _json.bytecode + inst._web3.SolidityCoder.encodeParams(typename, eval("[" + program.parameters + "]"));
+  }
+  let nonce = await getNonce(_options.wallet.address);
+  let gasPrice = await inst.getGasPrice(_options.gasPrice);
+  let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0x0", calldata);
+  console.log(_options.gasLimit, gasPrice, tx);
+  let signed = await inst.signTransaction(tx, _options.wallet.secret);
+  let hash;
+  try {
+    hash = await inst.sendSignedTransaction(signed);
+  } catch (e) {
+    console.log(e);
+    process.exit(-1);
+  }
+  console.log("create contract transaction hash:", hash);
+  console.log("waiting for contract address.......");
+  for (var i = 0; i < 20; i++) {
+    await sleep(2000);
+    let receipt = await inst.getTransactionReceipt(hash);
+    if (receipt && receipt.contractAddress) {
+      console.log("contract address:", receipt.contractAddress);
+      return;
+    }
+  }
+
+  console.log("can not get contract address, try get transaction receipt later");
+}
+
+// 初始化连接
+let inst = new utils.Ethereum(_options.server, _options.network == 1);
+inst.initWeb3();
+
+if (program.block) {
+  getBlock(program.block);
+  return;
+}
+
+if (program.transaction) {
+  getTransaction(program.transaction);
+  return;
+}
+
+if (program.receipt) {
+  getTransactionReceipt(program.receipt);
+  return;
+}
+
+if (program.deploy) {
+  deploy(program.deploy);
+  return;
+}
+
+if (program.balance) {
+  getBalance();
+  return;
+}
+
+if (program.getNonce) {
+  getCurrentNonce(_options.wallet.address);
+  return;
+}
+if (program.transfer) {
+  var amount = Number(program.amount);
+  if (isNaN(amount)) {
+    console.log("amount is", program.amount, "invalid");
+    process.exit();
+  }
+  transfer(program.transfer, amount);
+  return;
+}
+
+function getMethodCall() {
+  if (!program.parameters) {
+    return 'sc.callABI("' + program.method + '")';
+  }
+  return 'sc.callABI("' + program.method + '",' + program.parameters + ")";
+}
+
+async function callContract() {
+  let _json = getFile(program.abi);
+  let abi = _json.abi;
+  let sc = new utils.smartContract();
+  sc.init(program.contractAddr, inst, abi);
+  // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
+  let web3 = inst._web3
+  let namehash = eth_ens_namehash.hash
+
+  // 确定接口类型
+  const abiItem = abi.find((item) => item.name == program.method);
+  if (!abiItem) {
+    console.log("Can not find method", program.method, "in abi definition.");
+    process.exit();
+  }
+  const { stateMutability } = abiItem;
+  if (stateMutability === "view" || stateMutability === "pure") {
+    const byte = await eval(getMethodCall());
+    console.log(byte);
+    if (byte !== "0x") {
+      const decodeData = abiCoder.decode(abiItem.outputs, byte);
+      console.log("result:", JSON.stringify(decodeData, null, 2));
+    } else {
+      console.log("result: return empty response");
+    }
+  } else {
+    const calldata = await eval(getMethodCall());
+    console.log(getMethodCall(), calldata);
+    let amount = "0";
+    if (program.amount) {
+      amount = program.amount + "";
+    }
+    if (!!program.nonce) {
+      _options.nonce = program.nonce;
+    } else {
+      _options.nonce = await getNonce(_options.wallet.address);
+    }
+
+    let gasPrice = await inst.getGasPrice(_options.gasPrice);
+    let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+
+    const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+    console.log("hash:", hash);
+  }
+}
+
+if (program.abi) {
+  if (!program.contractAddr || !program.method) {
+    console.log("Please specify contract address, method and parameters");
+    process.exit();
+  }
+  if (!program.parameters) {
+    program.parameters = "";
+  }
+
+  callContract();
+  return;
+}
