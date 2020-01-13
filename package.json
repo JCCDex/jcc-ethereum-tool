@@ -1,6 +1,6 @@
 {
   "name": "jcc-ethereum-tool",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "jccdex jcc ethereum tool",
   "files": [
     "lib"
@@ -41,7 +41,7 @@
     "ethereumjs-wallet": "^0.6.3",
     "ethers": "^4.0.37",
     "fs": "0.0.1-security",
-    "jcc-ethereum-utils": "^0.1.14",
+    "jcc-ethereum-utils": "^0.2.0",
     "readline-sync": "^1.4.9"
   },
   "devDependencies": {
