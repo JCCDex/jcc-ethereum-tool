@@ -173,6 +173,7 @@ const sleep = (milliseconds) => {
 
 function getFile(filename) {
   if (!fs.existsSync(filename)) {
+    filename = __dirname + "/" + filename;
     if (!fs.existsSync(filename)) {
       console.log("can not find ", filename);
       process.exit();
