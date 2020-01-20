@@ -162,9 +162,9 @@ async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
   let gasPrice = await inst.getGasPrice(_options.gasPrice);
   let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
-  console.log(tx);
   let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
+  process.exit(0);
 }
 
 const sleep = (milliseconds) => {
@@ -209,12 +209,11 @@ async function deploy(compiledJson) {
     calldata = _json.bytecode;
   } else {
     const typename = constructor.inputs.map((input) => input.type);
-    calldata = _json.bytecode + inst._web3.SolidityCoder.encodeParams(typename, eval("[" + program.parameters + "]"));
+    calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
   }
   let nonce = await getNonce(_options.wallet.address);
   let gasPrice = await inst.getGasPrice(_options.gasPrice);
-  let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0x0", calldata);
-  console.log(_options.gasLimit, gasPrice, tx);
+  let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
   try {
@@ -230,6 +229,7 @@ async function deploy(compiledJson) {
     let receipt = await inst.getTransactionReceipt(hash);
     if (receipt && receipt.contractAddress) {
       console.log("contract address:", receipt.contractAddress);
+      process.exit(0);
       return;
     }
   }
@@ -305,16 +305,9 @@ async function callContract() {
   const { stateMutability } = abiItem;
   if (stateMutability === "view" || stateMutability === "pure") {
     const byte = await eval(getMethodCall());
-    console.log(byte);
-    if (byte !== "0x") {
-      const decodeData = abiCoder.decode(abiItem.outputs, byte);
-      console.log("result:", JSON.stringify(decodeData, null, 2));
-    } else {
-      console.log("result: return empty response");
-    }
+    console.log("return value:", byte);
   } else {
     const calldata = await eval(getMethodCall());
-    console.log(getMethodCall(), calldata);
     let amount = "0";
     if (program.amount) {
       amount = program.amount + "";
@@ -330,6 +323,7 @@ async function callContract() {
 
     const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
     console.log("hash:", hash);
+    process.exit(0);
   }
 }
 
