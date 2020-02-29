@@ -92,6 +92,11 @@ let _options = { network: 3 };
 if (!!!_config) {
   _config = getBaseHome() + "/config.json";
 }
+if (_config.indexOf("/") == -1 && _config.indexOf("\\") == -1) {
+  if (_config.indexOf("json") == -1) {
+    _config = getBaseHome() + "/config." + _config + ".json";
+  }
+}
 if (!fs.existsSync(_config)) {
   console.log("can not get", _config, "file, create it manula!");
   process.exit();
@@ -115,7 +120,12 @@ try {
 getNetwork(program.network);
 
 if (program.keystore) {
-  _options.wallet = Object.assign(_options.wallet, Keystore.getWalletFromKeystore(program.keystore, program.password));
+  let keystorePath = program.keystore;
+  // 兼容windows下的路径
+  if (keystorePath.indexOf("/") == -1 && keystorePath.indexOf("\\") == -1) {
+    keystorePath = getBaseHome() + "/" + keystorePath;
+  }
+  _options.wallet = Object.assign(_options.wallet, Keystore.getWalletFromKeystore(keystorePath, program.password));
 }
 
 if (!isNaN(Number(program.gas_limit))) {
