@@ -238,7 +238,7 @@ async function deploy(compiledJson) {
     await sleep(2000);
     let receipt = await inst.getTransactionReceipt(hash);
     if (receipt && receipt.contractAddress) {
-      console.log("contract address:", receipt.contractAddress);
+      console.log("create contract", receipt.status ? "success" : "fail", "contract address:", receipt.contractAddress);
       process.exit(0);
       return;
     }
