@@ -14,7 +14,7 @@ function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
 }
 
-program.version("0.0.1");
+program.version("0.0.10");
 program.usage("--help", "Show ethereum-tools help");
 
 let _description = "ETH command line tools";
@@ -147,9 +147,9 @@ async function getCurrentNonce(address) {
   console.log("current nonce:", nonce.toString());
 }
 
-async function getGasPrice(address) {
+async function getGasPrice() {
   if (!_options.gasPrice) {
-    _options.gasPrice = await inst.getGasPrice(address);
+    _options.gasPrice = await inst.getGasPrice();
   }
   return _options.gasPrice;
 }
@@ -177,7 +177,7 @@ async function getNonce(address) {
 }
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice(_options.gasPrice);
+  let gasPrice = await getGasPrice();
   let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
   let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
@@ -229,7 +229,7 @@ async function deploy(compiledJson) {
     calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
   }
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice(_options.gasPrice);
+  let gasPrice = await getGasPrice();
   let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
@@ -335,7 +335,7 @@ async function callContract() {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let gasPrice = await getGasPrice(_options.gasPrice);
+    let gasPrice = await getGasPrice();
     let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
 
     const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
