@@ -39,6 +39,9 @@ function importToKeystore() {
   var secret = readlineSync.question("MOAC wallet secret:", {
     hideEchoBack: true
   });
+  if (secret.indexOf("0x") == -1) {
+    secret = "0x" + secret;
+  }
   if (!utils.Ethereum.isValidSecret(secret)) {
     console.log("secret invalid, abort.");
     return;

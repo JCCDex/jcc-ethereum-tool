@@ -147,6 +147,13 @@ async function getCurrentNonce(address) {
   console.log("current nonce:", nonce.toString());
 }
 
+async function getGasPrice(address) {
+  if (!_options.gasPrice) {
+    _options.gasPrice = await inst.getGasPrice(address);
+  }
+  return _options.gasPrice;
+}
+
 async function getBlock(block) {
   let info = await inst.getBlock(block);
   console.log("block:", JSON.stringify(info, null, 2));
@@ -170,7 +177,7 @@ async function getNonce(address) {
 }
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await inst.getGasPrice(_options.gasPrice);
+  let gasPrice = await getGasPrice(_options.gasPrice);
   let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
   let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
@@ -222,7 +229,7 @@ async function deploy(compiledJson) {
     calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
   }
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await inst.getGasPrice(_options.gasPrice);
+  let gasPrice = await getGasPrice(_options.gasPrice);
   let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
@@ -238,7 +245,7 @@ async function deploy(compiledJson) {
     await sleep(2000);
     let receipt = await inst.getTransactionReceipt(hash);
     if (receipt && receipt.contractAddress) {
-      console.log("create contract", receipt.status ? "success" : "fail", "contract address:", receipt.contractAddress);
+      console.log("create contract", receipt.status ? "success" : "fail", "\ncontract address:", receipt.contractAddress);
       process.exit(0);
       return;
     }
@@ -328,7 +335,7 @@ async function callContract() {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let gasPrice = await inst.getGasPrice(_options.gasPrice);
+    let gasPrice = await getGasPrice(_options.gasPrice);
     let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
 
     const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
