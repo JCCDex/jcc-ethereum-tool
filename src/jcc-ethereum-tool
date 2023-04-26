@@ -37,6 +37,7 @@ program.option("--receipt <hash>", "get transaction receipt by hash");
 
 program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
+program.option("--transferheco <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--amount <amount>", "transfer amount");
 
 program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
@@ -75,6 +76,8 @@ if (program.import_private_to_keystore) {
 }
 
 function getNetwork(_network) {
+  let isNumber = !isNaN(Number(_network));
+  _network = isNumber ? Number(_network) : _network;
   let type = typeof _network;
   if (type === "number") {
     _options.network = _network;
@@ -178,9 +181,20 @@ async function getNonce(address) {
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
   let gasPrice = await getGasPrice();
-  let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
+  let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+  console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
+
   let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
+  process.exit(0);
+}
+
+async function transferheco(dest, amount) {
+  // let nonce = await getNonce(_options.wallet.address);
+  // let gasPrice = await getGasPrice();
+  // let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount, "");
+  // let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+  // console.log("transfer hash:", hash);
   process.exit(0);
 }
 
@@ -296,6 +310,15 @@ if (program.transfer) {
   transfer(program.transfer, amount);
   return;
 }
+if (program.transferheco) {
+  var amount = Number(program.amount);
+  if (isNaN(amount)) {
+    console.log("amount is", program.amount, "invalid");
+    process.exit();
+  }
+  transferheco(program.transferheco, amount);
+  return;
+}
 
 function getMethodCall() {
   if (!program.parameters) {
@@ -337,9 +360,14 @@ async function callContract() {
 
     let gasPrice = await getGasPrice();
     let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+    console.log("tx:", tx);
 
-    const hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+    let signed = await inst.signTransaction(tx, _options.wallet.secret);
+    console.log("signed:", signed);
+
+    const hash = await inst.sendSignedTransaction(signed);
     console.log("hash:", hash);
+
     process.exit(0);
   }
 }

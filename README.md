@@ -92,7 +92,7 @@ jcc-ethereum-tool --receipt 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfe
 - 发行合约
 
 ```javascript
-jcc-ethereum-tool --deploy "./MAYAToken.json" --gas_limit 3800000 --gas_limit 800000 --parameters '"parameter1","parameter2"'
+jcc-ethereum-tool --deploy "./MAYAToken.json" --gas_limit 3800000 --parameters '"parameter1","parameter2"'
 
 // 合约大小会影响gas limit,所以请自己设置合适的gas limit
 // 其次是创建合约可能是有参数的，请按照参数顺序在--parameters中设置
@@ -128,8 +128,8 @@ jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec7220
 - ERC20 的转账
 
 ```javascript
-jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --method "transfer" --parameters '"0xaddress.....",chain3.toSha("23.1")'
-// chain3.toSha("23.1") 这个可以利用函数转义方式将ERC20的数量展开，但是ERC20也有不是标准的18位小数的，如果需要自行处理小数位，要书写成下面的样子
+jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --method "transfer" --parameters '"0xaddress.....",web3.utils.toWei("23.1")'
+// web3.utils.toWei("23.1") 这个可以利用函数转义方式将ERC20的数量展开，但是ERC20也有不是标准的18位小数的，如果需要自行处理小数位，要书写成下面的样子
 jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --method "transfer" --parameters '"0xaddress.....",BigNumber(23.1*10**18)'
 ```
 
@@ -137,11 +137,11 @@ jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec7220
 
 ```javascript
 // 授权0x5d819874014dfc29ec6d56caacc4e95f2dd33352从指定账户转账额度
-jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --method "approve" --parameters '"0xspender address", chain3.toSha("333")'
+jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --method "approve" --parameters '"0xspender address", web3.utils.toWei("333")'
 
 // 查询授权数量
 jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --method "allowance" --parameters '"0xowner address","0xspender address"'
 
 // 授权转账
-jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --gas_price 1000000000 --method "transferFrom" --parameters '"0xowner address","0xdestination address", chain3.toSha("300")'
+jcc-ethereum-tool --abi erc20abi.json --contractAddr "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --gas_price 1000000000 --method "transferFrom" --parameters '"0xowner address","0xdestination address", web3.utils.toWei("300")'
 ```
