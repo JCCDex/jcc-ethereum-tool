@@ -9,6 +9,7 @@ const Keystore = require("./jcc-ethereum-keystore");
 const ethers = require("ethers");
 const abiCoder = ethers.utils.defaultAbiCoder;
 const eth_ens_namehash = require('eth-ens-namehash');
+const { create2ContractAddress } = require("web3-eth-contract");
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
@@ -39,13 +40,17 @@ program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--transferheco <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--amount <amount>", "transfer amount");
+program.option("--eip1559", "use with --transfer to send eip1559 transactions");
 
 program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
+program.option("--deploy2 <factory contract json file>", "deploy contract of using create2, if have parameter, set it in --parameters");
 
 program.option("--nonce <number>", "specified nonce");
 program.option("--getNonce", "get current nonce");
 program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
 program.option("--gas_limit <number>", "specified gas limit, default 50000");
+program.option("--maxFeePerGas <number>", "specified gasPrice, default 10000000000");
+program.option("--maxPriorityFeePerGas <number>", "specified gasPrice, default 10000000000");
 
 program.option("--erc20 <string>", "erc20 address");
 program.option("--erc721 <string>", "erc721 address");
@@ -56,6 +61,9 @@ program.option("--contractAddr <contract address>", "contract address");
 
 program.option("--method <string>", "specified contract method name");
 program.option("--parameters <string>", "specified contract parameters which seprator by |");
+program.option("--salt <string>", "specified salt");
+program.option("--generateCreate2Addr <contract json file>", "generate create2 contract address");
+program.option("--encodeCallData <contract json file>", "encoding calling contract method data");
 
 program.parse(process.argv);
 
@@ -115,6 +123,12 @@ try {
     // 10G
     _options.gasPrice = 10000000000;
   }
+  if (!_options.maxFeePerGas) {
+    _options.maxFeePerGas = 10000000000;
+  }
+  if (!_options.maxPriorityFeePerGas) {
+    _options.maxPriorityFeePerGas = 1000000000;
+  }
 } catch (e) {
   console.log("Parse config file fail, check and correct it", e);
   process.exit();
@@ -137,6 +151,12 @@ if (!isNaN(Number(program.gas_limit))) {
 if (!isNaN(Number(program.gas_price))) {
   _options.gasPrice = Number(program.gas_price);
 }
+if (!isNaN(Number(program.maxFeePerGas))) {
+  _options.maxFeePerGas = Number(program.maxFeePerGas);
+}
+if (!isNaN(Number(program.maxPriorityFeePerGas))) {
+  _options.maxPriorityFeePerGas = Number(program.maxPriorityFeePerGas);
+}
 if (!!program.server) {
   _options.server = program.server;
 }
@@ -157,19 +177,50 @@ async function getGasPrice() {
   return _options.gasPrice;
 }
 
+async function getFeeData() {
+  let feeData = {};
+  if (!_options.maxFeePerGas || !_options.maxPriorityFeePerGas) {
+    feeData = await inst.getFeeData();
+    _options.maxFeePerGas = _options.maxFeePerGas || feeData.maxFeePerGas;
+    _options.maxPriorityFeePerGas = _options.maxPriorityFeePerGas || feeData.maxPriorityFeePerGas;
+  }
+  return {
+    maxFeePerGas: _options.maxFeePerGas,
+    maxPriorityFeePerGas: _options.maxPriorityFeePerGas
+  }
+}
+
 async function getBlock(block) {
   let info = await inst.getBlock(block);
-  console.log("block:", JSON.stringify(info, null, 2));
+  console.log("block:", JSON.stringify(info, (key, value) => {
+    if (typeof value == "bigint") {
+      return value.toString();
+    } else {
+      return value;
+    }
+  }, 2));
 }
 
 async function getTransaction(hash) {
   let info = await inst.getTransaction(hash);
-  console.log("transaction:", JSON.stringify(info, null, 2));
+  console.log("transaction:", JSON.stringify(info, (key, value) => {
+    if (typeof value == "bigint") {
+      return value.toString();
+    } else {
+      return value;
+    }
+  }, 2));
 }
 
 async function getTransactionReceipt(hash) {
   let info = await inst.getTransactionReceipt(hash);
-  console.log("transaction receipt:", JSON.stringify(info, null, 2));
+  console.log("transaction receipt:", JSON.stringify(info, (key, value) => {
+    if (typeof value == "bigint") {
+      return value.toString();
+    } else {
+      return value;
+    }
+  }, 2));
 }
 async function getNonce(address) {
   if (!program.nonce) {
@@ -180,11 +231,17 @@ async function getNonce(address) {
 }
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice();
-  let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+  let tx;
+  if(program.eip1559) {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), "");
+  } else {
+    let gasPrice = await getGasPrice();
+    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+  }
   console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
 
-  let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+  let hash = await inst.sendSignedTransaction(await inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
   process.exit(0);
 }
@@ -219,32 +276,17 @@ function getFile(filename) {
 }
 
 async function deploy(compiledJson) {
-  let _json = getFile(compiledJson);
-  if (!_json.bytecode) {
-    console.log("can not get byte code");
-    process.exit(-1);
-  }
+  const calldata = await encodeCallData(compiledJson, "constructor");
 
-  let abi = _json.abi;
-  let constructor = abi.find((item) => item.type == "constructor");
-  if (!constructor) {
-    console.log("Can not find constructor in file", compiledJson, ", Please check it!");
-  }
-  if (constructor.inputs.length > 0 && !program.parameters) {
-    console.log("miss --parameter arguments");
-    process.exit();
-  }
-  let calldata;
-  if (constructor.inputs.length == 0) {
-    program.parameters = [];
-    calldata = _json.bytecode;
-  } else {
-    const typename = constructor.inputs.map((input) => input.type);
-    calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
-  }
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice();
-  let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  let tx;
+  if(program.eip1559) {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, null, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
+  } else {
+    let gasPrice = await getGasPrice();
+    tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  }
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
   try {
@@ -265,6 +307,126 @@ async function deploy(compiledJson) {
     }
   }
 
+  console.log("can not get contract address, try get transaction receipt later");
+}
+
+function generateCreate2Addr(compiledJson, salt) {
+  const send_address = _options.wallet.address;
+  console.log("send address:", send_address);
+  salt = inst._web3.eth.abi.encodeParameters([ "uint256" ], eval("[" + salt + "]"));
+  console.log("salt:", salt);
+  let _json = getFile(compiledJson);
+  if (!_json.bytecode) {
+    console.log("can not get byte code");
+    process.exit(-1);
+  }
+
+  let abi = _json.abi;
+  let constructor = abi.find((item) => item.type == "constructor");
+  if (!constructor) {
+    console.log("Can not find constructor in file", compiledJson, ", Please check it!");
+  }
+  if (constructor.inputs.length > 0 && !program.parameters) {
+    console.log("miss --parameter arguments");
+    process.exit();
+  }
+  let initCode;
+  if (constructor.inputs.length == 0) {
+    program.parameters = [];
+    initCode = _json.bytecode;
+  } else {
+    const typename = constructor.inputs.map((input) => input.type);
+    initCode = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
+  }
+  if (initCode.indexOf("0x") != 0) {
+    initCode = "0x" + initCode;
+  }
+  console.log("init code:", initCode);
+
+  return create2ContractAddress("0xA922bFa9C833C6d8B664EbFAaa5AEAB434DfA8B6", salt, initCode);
+}
+
+async function encodeCallData(compiledJson, method) {
+  let _json = getFile(compiledJson);
+  let abi = _json.abi;
+  if (!abi) {
+    console.log("Can not find abi in file", compiledJson, ", Please check it!");
+    process.exit();
+  }
+  if (method == "constructor") {
+    let bytecode = _json.bytecode;
+    if (!bytecode) {
+      console.log("Can not find bytecode in file", compiledJson, ", Please check it!");
+      process.exit();
+    }
+    let constructor = abi.find((item) => item.type == "constructor");
+    if (!constructor) {
+      console.log("Can not find constructor in file", compiledJson, ", Please check it!");
+      process.exit();
+    }
+    if (constructor.inputs.length > 0 && !program.parameters) {
+      console.log("miss --parameter arguments");
+      process.exit();
+    }
+
+    let calldata;
+    if (constructor.inputs.length == 0) {
+      program.parameters = [];
+      calldata = _json.bytecode;
+    } else {
+      const typename = constructor.inputs.map((input) => input.type);
+      calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
+    }
+    if (calldata.indexOf("0x") != 0) {
+      calldata = "0x" + calldata;
+    }
+    return calldata;
+  }
+  let sc = new utils.smartContract();
+  sc.init(program.contractAddr, inst, abi);
+  args = eval("[" + program.parameters + "]");
+  return await sc._ethereumABI.encode.apply(null, [method, ...args]);
+}
+
+async function deploy2(compiledJson) {
+  let method = program.method;
+  let contractAddr = program.contractAddr;
+  const calldata = await encodeCallData(compiledJson, method);
+  
+  let nonce = await getNonce(_options.wallet.address);
+  let tx;
+  if(program.eip1559) {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
+  } else {
+    let gasPrice = await getGasPrice();
+    tx = inst.getTx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  }
+
+  let signed = await inst.signTransaction(tx, _options.wallet.secret);
+  let hash;
+  try {
+    hash = await inst.sendSignedTransaction(signed);
+  } catch (e) {
+    console.log(e);
+    process.exit(-1);
+  }
+
+  console.log("create contract transaction hash:", hash);
+  console.log("waiting for contract address.......");
+  for (var i = 0; i < 20; i++) {
+    await sleep(2000);
+    let receipt = await inst.getTransactionReceipt(hash);
+    // if (receipt && receipt.contractAddress) {
+    //   console.log("create contract", receipt.status ? "success" : "fail", "\ncontract address:", receipt.contractAddress);
+    //   console.log("Contract address: It can be viewed on the browser.");
+    //   process.exit(0);
+    // }
+    if (receipt && receipt.status) {
+      console.log("create contract", receipt.status? "success" : "fail", "\ncontract address: Contract address: It can be viewed on the browser.");
+      process.exit(0);
+    }
+  }
   console.log("can not get contract address, try get transaction receipt later");
 }
 
@@ -320,6 +482,40 @@ if (program.transferheco) {
   return;
 }
 
+if (program.generateCreate2Addr) {
+  if (!program.salt) {
+    console.log("Please specify salt");
+    process.exit();
+  }
+  if (!program.parameters) {
+    program.parameters = "";
+  }
+
+  const address = generateCreate2Addr(program.generateCreate2Addr, program.salt);
+  console.log("create2 contract address:", address);
+  return;
+}
+
+if (program.encodeCallData) {
+  if (!program.method || (program.method != "constructor" && !program.contractAddr)) {
+    console.log("Please specify method, if method is not constructor, contract address is also required");
+    process.exit();
+  }
+  if (!program.parameters) {
+    program.parameters = "";
+  }
+
+  encodeCallData(program.encodeCallData, program.method).then((res) => {
+    console.log("call data:", res);
+  });
+  return;
+}
+
+if (program.deploy2) {
+  deploy2(program.deploy2);
+  return;
+}
+
 function getMethodCall() {
   if (!program.parameters) {
     return 'sc.callABI("' + program.method + '")';
@@ -358,8 +554,14 @@ async function callContract() {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let gasPrice = await getGasPrice();
-    let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+    let tx;
+    if(program.eip1559) {
+      let feeData = await getFeeData();
+      tx = inst.get1559Tx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount, calldata);
+    } else {
+      let gasPrice = await getGasPrice();
+      tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+    }
     console.log("tx:", tx);
 
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
