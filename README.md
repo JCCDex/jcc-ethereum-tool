@@ -131,10 +131,10 @@ jcc-ethereum-tool --encodeCallData "./contract.json" --contractAddr FactoryAddre
 jcc-ethereum-tool 支持任意合约的调用，一般来说需要以下几个参数
 
 - 指定 abi 文件，便于解析各种调用签名和参数，可以指定成自己的 abi 文件
-- 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G
+- 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G, maxFeePerGas 和 maxPriorityFeePerGas 默认是 10G
 - 数量尤其是小数位的推算，可以自己使用 chain3 的函数运算
 - 为支持 ens，增加了 namehash 函数支持
-- 支持 eip1559 交易，需添加--eip1559，maxFeePerGas、maxPriorityFeePerGas 需要自己指定，默认是 10G
+- 默认发送 EIP1559 交易，如果需要发送旧版交易，请使用--legacy 参数
 
 ## ERC20 的操作
 

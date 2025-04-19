@@ -41,7 +41,7 @@ program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--transferheco <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--amount <amount>", "transfer amount");
-program.option("--eip1559", "use with --transfer to send eip1559 transactions");
+program.option("--legacy", "use with --transfer to send legacy transactions");
 
 program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
 program.option("--deploy2 <factory contract json file>", "deploy contract of using create2, if have parameter, set it in --parameters");
@@ -263,12 +263,12 @@ async function getNonce(address) {
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
   let tx;
-  if(program.eip1559) {
-    let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), "");
-  } else {
+  if(program.legacy) {
     let gasPrice = await getGasPrice();
     tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+  } else {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), "");
   }
   console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
 
@@ -311,12 +311,12 @@ async function deploy(compiledJson) {
 
   let nonce = await getNonce(_options.wallet.address);
   let tx;
-  if(program.eip1559) {
-    let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, null, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
-  } else {
+  if(program.legacy) {
     let gasPrice = await getGasPrice();
     tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  } else {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, null, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
   }
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
@@ -426,12 +426,12 @@ async function deploy2(compiledJson) {
   
   let nonce = await getNonce(_options.wallet.address);
   let tx;
-  if(program.eip1559) {
-    let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
-  } else {
+  if(program.legacy) {
     let gasPrice = await getGasPrice();
     tx = inst.getTx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  } else {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
   }
 
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -597,12 +597,12 @@ async function callContract() {
     }
 
     let tx;
-    if(program.eip1559) {
-      let feeData = await getFeeData();
-      tx = inst.get1559Tx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount, calldata);
-    } else {
+    if(program.legacy) {
       let gasPrice = await getGasPrice();
       tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+    } else {
+      let feeData = await getFeeData();
+      tx = inst.get1559Tx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount, calldata);
     }
     console.log("tx:", tx);
 
