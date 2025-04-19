@@ -89,6 +89,7 @@ jcc-ethereum-tool --transaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b
 
 ```javascript
 jcc-ethereum-tool --traceTransaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
+// 跟踪交易，会输出所有的内部调用，包括合约调用。请选择支持debug_traceTransaction的节点
 ```
 
 - 查询交易收据
