@@ -34,6 +34,7 @@ program.option("--server <ETH node address>", "node rpc address");
 
 program.option("--block <block number>", "get block info by number or latest");
 program.option("--transaction <hash>", "get transaction by hash");
+program.option("--traceTransaction <hash>", "trace transactions by transaction hash");
 program.option("--receipt <hash>", "get transaction receipt by hash");
 
 program.option("--balance <Wallet address>", "get balance of address");
@@ -204,6 +205,36 @@ async function getBlock(block) {
 async function getTransaction(hash) {
   let info = await inst.getTransaction(hash);
   console.log("transaction:", JSON.stringify(info, (key, value) => {
+    if (typeof value == "bigint") {
+      return value.toString();
+    } else {
+      return value;
+    }
+  }, 2));
+}
+
+async function rpc_getTraceTransaction(hash) {
+  return new Promise((resolve, reject) => {
+    inst.getWeb3().currentProvider.send({
+      id: 1,
+      jsonrpc: "2.0",
+      method: "debug_traceTransaction",
+      params: [hash, {"tracer": "callTracer"}]
+    }, (err, res) => {
+      if (err) {
+        return reject(err);
+      }
+      if (res.error) {
+        return reject(res.error);
+      }
+      return resolve(res.result);
+    });
+  })
+}
+
+async function getTraceTransaction(hash) {
+  const info = await rpc_getTraceTransaction(hash)
+  console.log("trace transaction", JSON.stringify(info, (key, value) => {
     if (typeof value == "bigint") {
       return value.toString();
     } else {
@@ -416,18 +447,22 @@ async function deploy2(compiledJson) {
   console.log("waiting for contract address.......");
   for (var i = 0; i < 20; i++) {
     await sleep(2000);
-    let receipt = await inst.getTransactionReceipt(hash);
-    // if (receipt && receipt.contractAddress) {
-    //   console.log("create contract", receipt.status ? "success" : "fail", "\ncontract address:", receipt.contractAddress);
-    //   console.log("Contract address: It can be viewed on the browser.");
-    //   process.exit(0);
-    // }
-    if (receipt && receipt.status) {
-      console.log("create contract", receipt.status? "success" : "fail", "\ncontract address: Contract address: It can be viewed on the browser.");
-      process.exit(0);
+    try {
+      let trace = await rpc_getTraceTransaction("0x1d8d2b88f83fc21920947fb77d76298943d97b7724dd7e6378eba608fe8bb169");
+      if (trace) {
+        const calls = trace.calls;
+        create2_call = calls.find((call) => call.type.toLowerCase() == "create2");
+        const contractAddr = create2_call.to;
+        console.log("create contract", trace ? "success" : "fail", "\ncontract address:", contractAddr);
+        process.exit(0);
+      }
+    } catch (error) {
+      if (error.code == -32601) {
+        break;
+      } 
     }
   }
-  console.log("can not get contract address, try get transaction receipt later");
+  console.log("If you can't get the contract address, you can try tracking the transaction or checking it in the browser in the future");
 }
 
 // 初始化连接
@@ -442,6 +477,13 @@ if (program.block) {
 if (program.transaction) {
   getTransaction(program.transaction);
   return;
+}
+
+if (program.traceTransaction) {
+    getTraceTransaction(program.traceTransaction).catch((err) => {
+      console.error(err);
+    })
+    return;
 }
 
 if (program.receipt) {
