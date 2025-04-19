@@ -23,7 +23,9 @@ sudo npm install -g jcc-ethereum-tool --unsafe-perm=true
   "server" : "http://localhost:8546",
   "network" : 101,
   "gasPrice" : 20000000000,
-  "gasLimit" : 20000
+  "gasLimit" : 20000,
+  "maxFeePerGas": 20000000000,
+  "maxPriorityFeePerGas": 20000000000,
   "wallet" : {"address": "0x1234", "secret": "0x1223"}
 }
 ```
@@ -83,6 +85,12 @@ jcc-ethereum-tool --block 1234
 jcc-ethereum-tool --transaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
 ```
 
+- 跟踪交易
+
+```javascript
+jcc-ethereum-tool --traceTransaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
+```
+
 - 查询交易收据
 
 ```javascript
@@ -96,6 +104,25 @@ jcc-ethereum-tool --deploy "./MAYAToken.json" --gas_limit 3800000 --parameters '
 
 // 合约大小会影响gas limit,所以请自己设置合适的gas limit
 // 其次是创建合约可能是有参数的，请按照参数顺序在--parameters中设置
+
+// 使用create2发行合约
+jcc-ethereum-tool --deploy2 "./FactoryContract.json" --contractAddr FactoryAddress --gas_limit 3800000 --method "deploy" --parameters '"parameter1","parameter2"'
+// 使用create2发行合约，通过工厂合约进行发布，于合约调用类似，需要提供abi、调用的method名以及可能需要的parameters
+```
+
+- 生成 create2 合约地址
+
+```javascript
+jcc-ethereum-tool --generateCreate2Address "./contract.json" --salt "salt" --parameters '"parameter1","parameter2"'
+// salt 控制合约地址的生成。通过不同的salt，同一个合约的字节码(initcode)可以多次部署到不同的地址
+// 在部署合约时，可能需要一些参数生成initcode，请按照constructor的参数顺序在--parameters中设置
+```
+
+- 编码 calldata: 用于与合约交互
+
+```javascript
+jcc-ethereum-tool --encodeCallData "./contract.json" --contractAddr FactoryAddress --method "method" --parameters '"parameter1","parameter2"'
+// 如果method是constructor，说明合约并没有发布，所以生成的是initcode
 ```
 
 - 任意合约的方法调用
@@ -106,6 +133,7 @@ jcc-ethereum-tool 支持任意合约的调用，一般来说需要以下几个�
 - 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G
 - 数量尤其是小数位的推算，可以自己使用 chain3 的函数运算
 - 为支持 ens，增加了 namehash 函数支持
+- 支持 eip1559 交易，需添加--eip1559，maxFeePerGas、maxPriorityFeePerGas 需要自己指定，默认是 10G
 
 ## ERC20 的操作
 
