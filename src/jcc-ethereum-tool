@@ -50,8 +50,8 @@ program.option("--nonce <number>", "specified nonce");
 program.option("--getNonce", "get current nonce");
 program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
 program.option("--gas_limit <number>", "specified gas limit, default 50000");
-program.option("--maxFeePerGas <number>", "specified gasPrice, default 10000000000");
-program.option("--maxPriorityFeePerGas <number>", "specified gasPrice, default 10000000000");
+program.option("--maxFeePerGas <number>", "specified gasPrice");
+program.option("--maxPriorityFeePerGas <number>", "specified gasPrice");
 
 program.option("--erc20 <string>", "erc20 address");
 program.option("--erc721 <string>", "erc721 address");
@@ -63,7 +63,7 @@ program.option("--contractAddr <contract address>", "contract address");
 program.option("--method <string>", "specified contract method name");
 program.option("--parameters <string>", "specified contract parameters which seprator by |");
 program.option("--salt <string>", "specified salt");
-program.option("--generateCreate2Addr <contract json file>", "generate create2 contract address");
+program.option("--generateCreate2Addr <contract json file>", "generate create2 contract address, --contractAddr (deployer) and --salt is required");
 program.option("--encodeCallData <contract json file>", "encoding calling contract method data");
 
 program.parse(process.argv);
@@ -123,12 +123,6 @@ try {
   if (!_options.gasPrice) {
     // 10G
     _options.gasPrice = 10000000000;
-  }
-  if (!_options.maxFeePerGas) {
-    _options.maxFeePerGas = 10000000000;
-  }
-  if (!_options.maxPriorityFeePerGas) {
-    _options.maxPriorityFeePerGas = 1000000000;
   }
 } catch (e) {
   console.log("Parse config file fail, check and correct it", e);
@@ -191,26 +185,22 @@ async function getFeeData() {
   }
 }
 
+function customReplacer(key, value) {
+  if (typeof value === "bigint") {
+    return value.toString();
+  } else {
+    return value;
+  }
+}
+
 async function getBlock(block) {
   let info = await inst.getBlock(block);
-  console.log("block:", JSON.stringify(info, (key, value) => {
-    if (typeof value == "bigint") {
-      return value.toString();
-    } else {
-      return value;
-    }
-  }, 2));
+  console.log("block:", JSON.stringify(info, customReplacer, 2));
 }
 
 async function getTransaction(hash) {
   let info = await inst.getTransaction(hash);
-  console.log("transaction:", JSON.stringify(info, (key, value) => {
-    if (typeof value == "bigint") {
-      return value.toString();
-    } else {
-      return value;
-    }
-  }, 2));
+  console.log("transaction:", JSON.stringify(info, customReplacer, 2));
 }
 
 async function rpc_getTraceTransaction(hash) {
@@ -234,24 +224,12 @@ async function rpc_getTraceTransaction(hash) {
 
 async function getTraceTransaction(hash) {
   const info = await rpc_getTraceTransaction(hash)
-  console.log("trace transaction", JSON.stringify(info, (key, value) => {
-    if (typeof value == "bigint") {
-      return value.toString();
-    } else {
-      return value;
-    }
-  }, 2));
+  console.log("trace transaction", JSON.stringify(info, customReplacer, 2));
 }
 
 async function getTransactionReceipt(hash) {
   let info = await inst.getTransactionReceipt(hash);
-  console.log("transaction receipt:", JSON.stringify(info, (key, value) => {
-    if (typeof value == "bigint") {
-      return value.toString();
-    } else {
-      return value;
-    }
-  }, 2));
+  console.log("transaction receipt:", JSON.stringify(info, customReplacer, 2));
 }
 async function getNonce(address) {
   if (!program.nonce) {
@@ -260,16 +238,24 @@ async function getNonce(address) {
   }
   return program.nonce;
 }
-async function transfer(dest, amount) {
-  let nonce = await getNonce(_options.wallet.address);
+
+async function getTx(dest, amount, nonce) {
+  let latestBlock = await inst.getBlock("latest");
+  const baseFeePerGas = latestBlock.baseFeePerGas;
   let tx;
-  if(program.legacy) {
-    let gasPrice = await getGasPrice();
-    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
-  } else {
+  if(baseFeePerGas) {
     let feeData = await getFeeData();
     tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), "");
+  } else {
+    let gasPrice = await getGasPrice();
+    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
   }
+  return tx;
+}
+
+async function transfer(dest, amount) {
+  let nonce = await getNonce(_options.wallet.address);
+  const tx = await getTx(dest, amount, nonce);
   console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
 
   let hash = await inst.sendSignedTransaction(await inst.signTransaction(tx, _options.wallet.secret));
@@ -308,16 +294,8 @@ function getFile(filename) {
 
 async function deploy(compiledJson) {
   const calldata = await encodeCallData(compiledJson, "constructor");
-
   let nonce = await getNonce(_options.wallet.address);
-  let tx;
-  if(program.legacy) {
-    let gasPrice = await getGasPrice();
-    tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
-  } else {
-    let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, null, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
-  }
+  let tx = await getTx(null, 0, nonce);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
   try {
@@ -374,7 +352,7 @@ function generateCreate2Addr(compiledJson, salt) {
   }
   console.log("init code:", initCode);
 
-  return create2ContractAddress("0xA922bFa9C833C6d8B664EbFAaa5AEAB434DfA8B6", salt, initCode);
+  return create2ContractAddress(program.contractAddr, salt, initCode);
 }
 
 async function encodeCallData(compiledJson, method) {
@@ -425,14 +403,7 @@ async function deploy2(compiledJson) {
   const calldata = await encodeCallData(compiledJson, method);
   
   let nonce = await getNonce(_options.wallet.address);
-  let tx;
-  if(program.legacy) {
-    let gasPrice = await getGasPrice();
-    tx = inst.getTx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, gasPrice, "0", calldata);
-  } else {
-    let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, contractAddr, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, "0", calldata);
-  }
+  let tx = await getTx(contractAddr, 0, nonce);
 
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
@@ -448,7 +419,7 @@ async function deploy2(compiledJson) {
   for (var i = 0; i < 20; i++) {
     await sleep(2000);
     try {
-      let trace = await rpc_getTraceTransaction("0x1d8d2b88f83fc21920947fb77d76298943d97b7724dd7e6378eba608fe8bb169");
+      let trace = await rpc_getTraceTransaction(hash);
       if (trace) {
         const calls = trace.calls;
         create2_call = calls.find((call) => call.type.toLowerCase() == "create2");
@@ -525,8 +496,8 @@ if (program.transferheco) {
 }
 
 if (program.generateCreate2Addr) {
-  if (!program.salt) {
-    console.log("Please specify salt");
+  if (!program.contractAddr || !program.salt) {
+    console.log("Please specify contract address and method");
     process.exit();
   }
   if (!program.parameters) {
@@ -596,14 +567,7 @@ async function callContract() {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let tx;
-    if(program.legacy) {
-      let gasPrice = await getGasPrice();
-      tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
-    } else {
-      let feeData = await getFeeData();
-      tx = inst.get1559Tx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount, calldata);
-    }
+    let tx = await getTx(program.contractAddr, amount, _options.nonce);
     console.log("tx:", tx);
 
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
