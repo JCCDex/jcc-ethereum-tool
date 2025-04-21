@@ -1,0 +1,12 @@
+{
+  "server": "https://ethereum-sepolia-rpc.publicnode.com",
+  "network": 11155111,
+  "gasPrice": 27130000032,
+  "gasLimit": 260000,
+  "maxFeePerGas": null,
+  "maxPriorityFeePerGas": null,
+  "wallet": {
+    "address": "0xa4Ea040ed2A41bC0457A0fb8aB430284497bcd94",
+    "secret": "0xfdb32503bfd57625113a6cd7932ed9ad0649d30385db60a33596aa5e99cb44d0"
+  }
+}
