@@ -239,23 +239,23 @@ async function getNonce(address) {
   return program.nonce;
 }
 
-async function getTx(dest, amount, nonce) {
+async function getTx(dest, amount, nonce, calldata) {
   let latestBlock = await inst.getBlock("latest");
   const baseFeePerGas = latestBlock.baseFeePerGas;
   let tx;
   if(baseFeePerGas) {
     let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), "");
+    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), calldata);
   } else {
     let gasPrice = await getGasPrice();
-    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), calldata);
   }
   return tx;
 }
 
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
-  const tx = await getTx(dest, amount, nonce);
+  const tx = await getTx(dest, amount, nonce, "");
   console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
 
   let hash = await inst.sendSignedTransaction(await inst.signTransaction(tx, _options.wallet.secret));
@@ -295,7 +295,7 @@ function getFile(filename) {
 async function deploy(compiledJson) {
   const calldata = await encodeCallData(compiledJson, "constructor");
   let nonce = await getNonce(_options.wallet.address);
-  let tx = await getTx(null, 0, nonce);
+  let tx = await getTx(null, 0, nonce, calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
   try {
@@ -403,7 +403,7 @@ async function deploy2(compiledJson) {
   const calldata = await encodeCallData(compiledJson, method);
   
   let nonce = await getNonce(_options.wallet.address);
-  let tx = await getTx(contractAddr, 0, nonce);
+  let tx = await getTx(contractAddr, 0, nonce, calldata);
 
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
@@ -567,7 +567,7 @@ async function callContract() {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let tx = await getTx(program.contractAddr, amount, _options.nonce);
+    let tx = await getTx(program.contractAddr, amount, _options.nonce, calldata);
     console.log("tx:", tx);
 
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
