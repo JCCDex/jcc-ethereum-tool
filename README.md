@@ -24,8 +24,6 @@ sudo npm install -g jcc-ethereum-tool --unsafe-perm=true
   "network" : 101,
   "gasPrice" : 20000000000,
   "gasLimit" : 20000,
-  "maxFeePerGas": 20000000000,
-  "maxPriorityFeePerGas": 20000000000,
   "wallet" : {"address": "0x1234", "secret": "0x1223"}
 }
 ```
@@ -123,7 +121,7 @@ jcc-ethereum-tool --generateCreate2Address "./contract.json" --salt "salt" --par
 
 ```javascript
 jcc-ethereum-tool --encodeCallData "./contract.json" --contractAddr FactoryAddress --method "method" --parameters '"parameter1","parameter2"'
-// 如果method是constructor，说明合约并没有发布，所以生成的是initcode
+// 如果method是constructor，说明合约并没有发布，所以生成的是initcode，此时contractAddr并不重要
 ```
 
 - 任意合约的方法调用
@@ -131,10 +129,9 @@ jcc-ethereum-tool --encodeCallData "./contract.json" --contractAddr FactoryAddre
 jcc-ethereum-tool 支持任意合约的调用，一般来说需要以下几个参数
 
 - 指定 abi 文件，便于解析各种调用签名和参数，可以指定成自己的 abi 文件
-- 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G, maxFeePerGas 和 maxPriorityFeePerGas 默认是 10G
+- 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G
 - 数量尤其是小数位的推算，可以自己使用 chain3 的函数运算
 - 为支持 ens，增加了 namehash 函数支持
-- 默认发送 EIP1559 交易，如果需要发送旧版交易，请使用--legacy 参数
 
 ## ERC20 的操作
 
