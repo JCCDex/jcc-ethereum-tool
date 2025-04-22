@@ -156,8 +156,8 @@ if (!!program.server) {
   _options.server = program.server;
 }
 
-async function getBalance() {
-  let balance = await inst.getBalance(program.balance);
+async function getBalance(address) {
+  let balance = await inst.getBalance(address);
   console.log("balance:", balance);
 }
 async function getCurrentNonce(address) {
@@ -223,7 +223,10 @@ async function rpc_getTraceTransaction(hash) {
 }
 
 async function getTraceTransaction(hash) {
-  const info = await rpc_getTraceTransaction(hash)
+  const info = await rpc_getTraceTransaction(hash).catch((err) => {
+    console.error(err);
+    process.exit(-1);
+  })
   console.log("trace transaction", JSON.stringify(info, customReplacer, 2));
 }
 
@@ -293,7 +296,7 @@ function getFile(filename) {
 }
 
 async function deploy(compiledJson, parameters) {
-  const calldata = await encodeCallData(compiledJson, "constructor", parameters);
+  const calldata = await encodeCallData(compiledJson, "constructor", parameters, null);
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(null, 0, nonce, calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -319,7 +322,7 @@ async function deploy(compiledJson, parameters) {
   console.log("can not get contract address, try get transaction receipt later");
 }
 
-function generateCreate2Addr(compiledJson, salt, parameters) {
+function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
   const send_address = _options.wallet.address;
   console.log("send address:", send_address);
   salt = inst._web3.utils.encodePacked({
@@ -355,55 +358,36 @@ function generateCreate2Addr(compiledJson, salt, parameters) {
   }
   console.log("init code:", initCode);
 
-  return create2ContractAddress(program.contractAddr, salt, initCode);
+  return create2ContractAddress(contractAddr, salt, initCode);
 }
 
-async function encodeCallData(compiledJson, method, parameters) {
+async function encodeCallData(compiledJson, method, parameters, contractAddr) {
   let _json = getFile(compiledJson);
   let abi = _json.abi;
+  let bytecode = _json.bytecode;
   if (!abi) {
     console.log("Can not find abi in file", compiledJson, ", Please check it!");
     process.exit();
   }
+  let sc = new utils.smartContract();
+  sc.init(contractAddr, inst, abi);
+  args = eval("[" + parameters + "]");
   if (method == "constructor") {
-    let bytecode = _json.bytecode;
-    if (!bytecode) {
-      console.log("Can not find bytecode in file", compiledJson, ", Please check it!");
-      process.exit();
-    }
     let constructor = abi.find((item) => item.type == "constructor");
     if (!constructor) {
-      console.log("Can not find constructor in file", compiledJson, ", Please check it!");
-      process.exit();
+      return bytecode;
     }
     if (constructor.inputs.length > 0 && !parameters) {
       console.log("miss --parameter arguments");
       process.exit();
     }
-
-    let calldata;
-    if (constructor.inputs.length == 0) {
-      parameters = [];
-      calldata = _json.bytecode;
-    } else {
-      const typename = constructor.inputs.map((input) => input.type);
-      calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + parameters + "]")));
-    }
-    if (calldata.indexOf("0x") != 0) {
-      calldata = "0x" + calldata;
-    }
-    return calldata;
+    return sc._ethereumABI._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
   }
-  let sc = new utils.smartContract();
-  sc.init(program.contractAddr, inst, abi);
-  args = eval("[" + parameters + "]");
   return await sc._ethereumABI.encode.apply(null, [method, ...args]);
 }
 
-async function deploy2(compiledJson, parameters) {
-  let method = program.method;
-  let contractAddr = program.contractAddr;
-  const calldata = await encodeCallData(compiledJson, method, parameters);
+async function deploy2(compiledJson, contractAddr, method, parameters) {
+  const calldata = await encodeCallData(compiledJson, method, parameters, contractAddr);
   
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(contractAddr, 0, nonce, calldata);
@@ -454,9 +438,7 @@ if (program.transaction) {
 }
 
 if (program.traceTransaction) {
-    getTraceTransaction(program.traceTransaction).catch((err) => {
-      console.error(err);
-    })
+    getTraceTransaction(program.traceTransaction);
     return;
 }
 
@@ -471,7 +453,7 @@ if (program.deploy) {
 }
 
 if (program.balance) {
-  getBalance();
+  getBalance(program.balance);
   return;
 }
 
@@ -507,7 +489,7 @@ if (program.generateCreate2Addr) {
     program.parameters = "";
   }
 
-  const address = generateCreate2Addr(program.generateCreate2Addr, program.salt, program.parameters);
+  const address = generateCreate2Addr(program.generateCreate2Addr, program.contractAddr, program.salt, program.parameters);
   console.log("create2 contract address:", address);
   return;
 }
@@ -521,56 +503,56 @@ if (program.encodeCallData) {
     program.parameters = "";
   }
 
-  encodeCallData(program.encodeCallData, program.method, program.parameters).then((res) => {
+  encodeCallData(program.encodeCallData, program.method, program.parameters, program.contractAddr).then((res) => {
     console.log("call data:", res);
   });
   return;
 }
 
 if (program.deploy2) {
-  deploy2(program.deploy2, program.parameters);
+  deploy2(program.deploy2, program.contractAddr, program.method, program.parameters);
   return;
 }
 
-function getMethodCall() {
-  if (!program.parameters) {
-    return 'sc.callABI("' + program.method + '")';
+function getMethodCall(method, parameters) {
+  if (!parameters) {
+    return 'sc.callABI("' + method + '")';
   }
-  return 'sc.callABI("' + program.method + '",' + program.parameters + ")";
+  return 'sc.callABI("' + method + '",' + parameters + ")";
 }
 
-async function callContract() {
-  let _json = getFile(program.abi);
+async function callContract(abiJson, contractAddr, method, parameters) {
+  let _json = getFile(abiJson);
   let abi = _json.abi;
   let sc = new utils.smartContract();
-  sc.init(program.contractAddr, inst, abi);
+  sc.init(contractAddr, inst, abi);
   // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
   let web3 = inst._web3
   let namehash = eth_ens_namehash.hash
 
   // 确定接口类型
-  const abiItem = abi.find((item) => item.name == program.method);
+  const abiItem = abi.find((item) => item.name == method);
   if (!abiItem) {
-    console.log("Can not find method", program.method, "in abi definition.");
+    console.log("Can not find method", method, "in abi definition.");
     process.exit();
   }
   const { stateMutability } = abiItem;
   if (stateMutability === "view" || stateMutability === "pure") {
-    const byte = await eval(getMethodCall());
+    const byte = await eval(getMethodCall(method, parameters));
     console.log("return value:", byte);
   } else {
-    const calldata = await eval(getMethodCall());
+    const calldata = await eval(getMethodCall(method, parameters));
     let amount = "0";
-    if (program.amount) {
-      amount = program.amount + "";
+    if (amount) {
+      amount = amount + "";
     }
-    if (!!program.nonce) {
-      _options.nonce = program.nonce;
+    if (!!nonce) {
+      _options.nonce = nonce;
     } else {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let tx = await getTx(program.contractAddr, amount, _options.nonce, calldata);
+    let tx = await getTx(contractAddr, amount, _options.nonce, calldata);
     console.log("tx:", tx);
 
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -592,6 +574,6 @@ if (program.abi) {
     program.parameters = "";
   }
 
-  callContract();
+  callContract(program.abi, program.contractAddr, program.method, program.parameters);
   return;
 }
