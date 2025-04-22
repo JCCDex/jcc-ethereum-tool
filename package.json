@@ -41,7 +41,7 @@
     "ethereumjs-wallet": "^0.6.3",
     "ethers": "^4.0.37",
     "fs": "0.0.1-security",
-    "jcc-ethereum-utils": "^0.2.7",
+    "jcc-ethereum-utils": "^0.3.0",
     "readline-sync": "^1.4.9"
   },
   "devDependencies": {

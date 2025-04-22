@@ -9,6 +9,7 @@ const Keystore = require("./jcc-ethereum-keystore");
 const ethers = require("ethers");
 const abiCoder = ethers.utils.defaultAbiCoder;
 const eth_ens_namehash = require('eth-ens-namehash');
+const { create2ContractAddress } = require("web3-eth-contract");
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
@@ -33,19 +34,24 @@ program.option("--server <ETH node address>", "node rpc address");
 
 program.option("--block <block number>", "get block info by number or latest");
 program.option("--transaction <hash>", "get transaction by hash");
+program.option("--traceTransaction <hash>", "trace transactions by transaction hash");
 program.option("--receipt <hash>", "get transaction receipt by hash");
 
 program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--transferheco <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--amount <amount>", "transfer amount");
+program.option("--legacy", "use with --transfer to send legacy transactions");
 
 program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
+program.option("--deploy2 <factory contract json file>", "deploy contract of using create2, if have parameter, set it in --parameters");
 
 program.option("--nonce <number>", "specified nonce");
 program.option("--getNonce", "get current nonce");
 program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
 program.option("--gas_limit <number>", "specified gas limit, default 50000");
+program.option("--maxFeePerGas <number>", "specified gasPrice");
+program.option("--maxPriorityFeePerGas <number>", "specified gasPrice");
 
 program.option("--erc20 <string>", "erc20 address");
 program.option("--erc721 <string>", "erc721 address");
@@ -56,6 +62,9 @@ program.option("--contractAddr <contract address>", "contract address");
 
 program.option("--method <string>", "specified contract method name");
 program.option("--parameters <string>", "specified contract parameters which seprator by |");
+program.option("--salt <string>", "specified salt, byte32");
+program.option("--generateCreate2Addr <contract json file>", "generate create2 contract address, --contractAddr (deployer) and --salt is required");
+program.option("--encodeCallData <contract json file>", "encoding calling contract method data");
 
 program.parse(process.argv);
 
@@ -137,12 +146,18 @@ if (!isNaN(Number(program.gas_limit))) {
 if (!isNaN(Number(program.gas_price))) {
   _options.gasPrice = Number(program.gas_price);
 }
+if (!isNaN(Number(program.maxFeePerGas))) {
+  _options.maxFeePerGas = Number(program.maxFeePerGas);
+}
+if (!isNaN(Number(program.maxPriorityFeePerGas))) {
+  _options.maxPriorityFeePerGas = Number(program.maxPriorityFeePerGas);
+}
 if (!!program.server) {
   _options.server = program.server;
 }
 
-async function getBalance() {
-  let balance = await inst.getBalance(program.balance);
+async function getBalance(address) {
+  let balance = await inst.getBalance(address);
   console.log("balance:", balance);
 }
 async function getCurrentNonce(address) {
@@ -157,19 +172,67 @@ async function getGasPrice() {
   return _options.gasPrice;
 }
 
+async function getFeeData() {
+  let feeData = {};
+  if (!_options.maxFeePerGas || !_options.maxPriorityFeePerGas) {
+    feeData = await inst.getFeeData();
+    _options.maxFeePerGas = _options.maxFeePerGas || feeData.maxFeePerGas;
+    _options.maxPriorityFeePerGas = _options.maxPriorityFeePerGas || feeData.maxPriorityFeePerGas;
+  }
+  return {
+    maxFeePerGas: _options.maxFeePerGas,
+    maxPriorityFeePerGas: _options.maxPriorityFeePerGas
+  }
+}
+
+function customReplacer(key, value) {
+  if (typeof value === "bigint") {
+    return value.toString();
+  } else {
+    return value;
+  }
+}
+
 async function getBlock(block) {
   let info = await inst.getBlock(block);
-  console.log("block:", JSON.stringify(info, null, 2));
+  console.log("block:", JSON.stringify(info, customReplacer, 2));
 }
 
 async function getTransaction(hash) {
   let info = await inst.getTransaction(hash);
-  console.log("transaction:", JSON.stringify(info, null, 2));
+  console.log("transaction:", JSON.stringify(info, customReplacer, 2));
+}
+
+async function rpc_getTraceTransaction(hash) {
+  return new Promise((resolve, reject) => {
+    inst.getWeb3().currentProvider.send({
+      id: 1,
+      jsonrpc: "2.0",
+      method: "debug_traceTransaction",
+      params: [hash, {"tracer": "callTracer"}]
+    }, (err, res) => {
+      if (err) {
+        return reject(err);
+      }
+      if (res.error) {
+        return reject(res.error);
+      }
+      return resolve(res.result);
+    });
+  })
+}
+
+async function getTraceTransaction(hash) {
+  const info = await rpc_getTraceTransaction(hash).catch((err) => {
+    console.error(err);
+    process.exit(-1);
+  })
+  console.log("trace transaction", JSON.stringify(info, customReplacer, 2));
 }
 
 async function getTransactionReceipt(hash) {
   let info = await inst.getTransactionReceipt(hash);
-  console.log("transaction receipt:", JSON.stringify(info, null, 2));
+  console.log("transaction receipt:", JSON.stringify(info, customReplacer, 2));
 }
 async function getNonce(address) {
   if (!program.nonce) {
@@ -178,13 +241,27 @@ async function getNonce(address) {
   }
   return program.nonce;
 }
+
+async function getTx(dest, amount, nonce, calldata) {
+  let latestBlock = await inst.getBlock("latest");
+  const baseFeePerGas = latestBlock.baseFeePerGas;
+  let tx;
+  if(baseFeePerGas) {
+    let feeData = await getFeeData();
+    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), calldata);
+  } else {
+    let gasPrice = await getGasPrice();
+    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), calldata);
+  }
+  return tx;
+}
+
 async function transfer(dest, amount) {
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice();
-  let tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), "");
+  const tx = await getTx(dest, amount, nonce, "");
   console.log("tx:", tx, "raw:", await inst.signTransaction(tx, _options.wallet.secret));
 
-  let hash = await inst.sendSignedTransaction(inst.signTransaction(tx, _options.wallet.secret));
+  let hash = await inst.sendSignedTransaction(await inst.signTransaction(tx, _options.wallet.secret));
   console.log("transfer hash:", hash);
   process.exit(0);
 }
@@ -218,33 +295,10 @@ function getFile(filename) {
   }
 }
 
-async function deploy(compiledJson) {
-  let _json = getFile(compiledJson);
-  if (!_json.bytecode) {
-    console.log("can not get byte code");
-    process.exit(-1);
-  }
-
-  let abi = _json.abi;
-  let constructor = abi.find((item) => item.type == "constructor");
-  if (!constructor) {
-    console.log("Can not find constructor in file", compiledJson, ", Please check it!");
-  }
-  if (constructor.inputs.length > 0 && !program.parameters) {
-    console.log("miss --parameter arguments");
-    process.exit();
-  }
-  let calldata;
-  if (constructor.inputs.length == 0) {
-    program.parameters = [];
-    calldata = _json.bytecode;
-  } else {
-    const typename = constructor.inputs.map((input) => input.type);
-    calldata = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + program.parameters + "]")));
-  }
+async function deploy(compiledJson, parameters) {
+  const calldata = await encodeCallData(compiledJson, "constructor", parameters, null);
   let nonce = await getNonce(_options.wallet.address);
-  let gasPrice = await getGasPrice();
-  let tx = inst.getTx(_options.wallet.address, null, nonce, _options.gasLimit, gasPrice, "0", calldata);
+  let tx = await getTx(null, 0, nonce, calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
   let hash;
   try {
@@ -268,6 +322,107 @@ async function deploy(compiledJson) {
   console.log("can not get contract address, try get transaction receipt later");
 }
 
+function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
+  const send_address = _options.wallet.address;
+  console.log("send address:", send_address);
+  salt = inst._web3.utils.encodePacked({
+    type: "bytes32",
+    value: salt
+  })
+  console.log("salt:", salt);
+  let _json = getFile(compiledJson);
+  if (!_json.bytecode) {
+    console.log("can not get byte code");
+    process.exit(-1);
+  }
+
+  let abi = _json.abi;
+  let constructor = abi.find((item) => item.type == "constructor");
+  if (!constructor) {
+    console.log("Can not find constructor in file", compiledJson, ", Please check it!");
+  }
+  if (constructor.inputs.length > 0 && !parameters) {
+    console.log("miss --parameter arguments");
+    process.exit();
+  }
+  let initCode;
+  if (constructor.inputs.length == 0) {
+    parameters = [];
+    initCode = _json.bytecode;
+  } else {
+    const typename = constructor.inputs.map((input) => input.type);
+    initCode = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + parameters + "]")));
+  }
+  if (initCode.indexOf("0x") != 0) {
+    initCode = "0x" + initCode;
+  }
+  console.log("init code:", initCode);
+
+  return create2ContractAddress(contractAddr, salt, initCode);
+}
+
+async function encodeCallData(compiledJson, method, parameters, contractAddr) {
+  let _json = getFile(compiledJson);
+  let abi = _json.abi;
+  let bytecode = _json.bytecode;
+  if (!abi) {
+    console.log("Can not find abi in file", compiledJson, ", Please check it!");
+    process.exit();
+  }
+  let sc = new utils.smartContract();
+  sc.init(contractAddr, inst, abi);
+  args = eval("[" + parameters + "]");
+  if (method == "constructor") {
+    let constructor = abi.find((item) => item.type == "constructor");
+    if (!constructor) {
+      return bytecode;
+    }
+    if (constructor.inputs.length > 0 && !parameters) {
+      console.log("miss --parameter arguments");
+      process.exit();
+    }
+    return sc._ethereumABI._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
+  }
+  return await sc._ethereumABI.encode.apply(null, [method, ...args]);
+}
+
+async function deploy2(compiledJson, contractAddr, method, parameters) {
+  const calldata = await encodeCallData(compiledJson, method, parameters, contractAddr);
+  
+  let nonce = await getNonce(_options.wallet.address);
+  let tx = await getTx(contractAddr, 0, nonce, calldata);
+
+  let signed = await inst.signTransaction(tx, _options.wallet.secret);
+  let hash;
+  try {
+    hash = await inst.sendSignedTransaction(signed);
+  } catch (e) {
+    console.log(e);
+    process.exit(-1);
+  }
+
+  console.log("create contract transaction hash:", hash);
+  console.log("waiting for contract address.......");
+  for (var i = 0; i < 20; i++) {
+    await sleep(2000);
+    try {
+      let trace = await rpc_getTraceTransaction(hash);
+      if (trace) {
+        const calls = trace.calls;
+        create2_call = calls.find((call) => call.type.toLowerCase() == "create2");
+        const contractAddr = create2_call.to;
+        console.log("create contract", trace ? "success" : "fail", "\ncontract address:", contractAddr);
+        process.exit(0);
+      }
+    } catch (error) {
+      if (error.code == -32601) {
+        break;
+      } 
+    }
+  }
+  console.log("If you can't get the contract address, you can try tracking the transaction or checking it in the browser in the future");
+}
+
 // 初始化连接
 let inst = new utils.Ethereum(_options.server, _options.network == 1);
 inst.initWeb3();
@@ -282,18 +437,23 @@ if (program.transaction) {
   return;
 }
 
+if (program.traceTransaction) {
+    getTraceTransaction(program.traceTransaction);
+    return;
+}
+
 if (program.receipt) {
   getTransactionReceipt(program.receipt);
   return;
 }
 
 if (program.deploy) {
-  deploy(program.deploy);
+  deploy(program.deploy, program.parameters);
   return;
 }
 
 if (program.balance) {
-  getBalance();
+  getBalance(program.balance);
   return;
 }
 
@@ -320,46 +480,79 @@ if (program.transferheco) {
   return;
 }
 
-function getMethodCall() {
-  if (!program.parameters) {
-    return 'sc.callABI("' + program.method + '")';
+if (program.generateCreate2Addr) {
+  if (!program.contractAddr || !program.salt) {
+    console.log("Please specify contract address and salt");
+    process.exit();
   }
-  return 'sc.callABI("' + program.method + '",' + program.parameters + ")";
+  if (!program.parameters) {
+    program.parameters = "";
+  }
+
+  const address = generateCreate2Addr(program.generateCreate2Addr, program.contractAddr, program.salt, program.parameters);
+  console.log("create2 contract address:", address);
+  return;
 }
 
-async function callContract() {
-  let _json = getFile(program.abi);
+if (program.encodeCallData) {
+  if (!program.method || (program.method != "constructor" && !program.contractAddr)) {
+    console.log("Please specify method, if method is not constructor, contract address is also required");
+    process.exit();
+  }
+  if (!program.parameters) {
+    program.parameters = "";
+  }
+
+  encodeCallData(program.encodeCallData, program.method, program.parameters, program.contractAddr).then((res) => {
+    console.log("call data:", res);
+  });
+  return;
+}
+
+if (program.deploy2) {
+  deploy2(program.deploy2, program.contractAddr, program.method, program.parameters);
+  return;
+}
+
+function getMethodCall(method, parameters) {
+  if (!parameters) {
+    return 'sc.callABI("' + method + '")';
+  }
+  return 'sc.callABI("' + method + '",' + parameters + ")";
+}
+
+async function callContract(abiJson, contractAddr, method, parameters) {
+  let _json = getFile(abiJson);
   let abi = _json.abi;
   let sc = new utils.smartContract();
-  sc.init(program.contractAddr, inst, abi);
+  sc.init(contractAddr, inst, abi);
   // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
   let web3 = inst._web3
   let namehash = eth_ens_namehash.hash
 
   // 确定接口类型
-  const abiItem = abi.find((item) => item.name == program.method);
+  const abiItem = abi.find((item) => item.name == method);
   if (!abiItem) {
-    console.log("Can not find method", program.method, "in abi definition.");
+    console.log("Can not find method", method, "in abi definition.");
     process.exit();
   }
   const { stateMutability } = abiItem;
   if (stateMutability === "view" || stateMutability === "pure") {
-    const byte = await eval(getMethodCall());
+    const byte = await eval(getMethodCall(method, parameters));
     console.log("return value:", byte);
   } else {
-    const calldata = await eval(getMethodCall());
+    const calldata = await eval(getMethodCall(method, parameters));
     let amount = "0";
-    if (program.amount) {
-      amount = program.amount + "";
+    if (amount) {
+      amount = amount + "";
     }
-    if (!!program.nonce) {
-      _options.nonce = program.nonce;
+    if (!!nonce) {
+      _options.nonce = nonce;
     } else {
       _options.nonce = await getNonce(_options.wallet.address);
     }
 
-    let gasPrice = await getGasPrice();
-    let tx = inst.getTx(_options.wallet.address, program.contractAddr, _options.nonce, _options.gasLimit, gasPrice, amount, calldata);
+    let tx = await getTx(contractAddr, amount, _options.nonce, calldata);
     console.log("tx:", tx);
 
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -381,6 +574,6 @@ if (program.abi) {
     program.parameters = "";
   }
 
-  callContract();
+  callContract(program.abi, program.contractAddr, program.method, program.parameters);
   return;
 }
