@@ -10,12 +10,14 @@ const ethers = require("ethers");
 const abiCoder = ethers.utils.defaultAbiCoder;
 const eth_ens_namehash = require('eth-ens-namehash');
 const { create2ContractAddress } = require("web3-eth-contract");
+const packageJson = require("../package.json");
 
 function getBaseHome() {
   return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
 }
 
-program.version("0.0.10");
+// program.version("0.0.10");
+program.version(packageJson.version, '-v, --version', 'Output the current version');
 program.usage("--help", "Show ethereum-tools help");
 
 let _description = "ETH command line tools";
