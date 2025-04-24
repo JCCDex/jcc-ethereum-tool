@@ -1,8 +1,11 @@
 const fs = require("fs");
 const utils = require("jcc-ethereum-utils");
-const Wallet = require("ethereumjs-wallet");
+// const { Wallet } = require("ethereumjs-wallet");
+const { Wallet } = require("@ethereumjs/wallet");
 var readlineSync = require("readline-sync");
-var ethUtil = require("ethereumjs-util");
+// var ethUtil = require("ethereumjs-util");
+// var ethUtil = require('@ethereumjs/util')
+const { hexToBytes } = require("@ethereumjs/util");
 
 var Writable = require("stream").Writable;
 
@@ -30,9 +33,11 @@ function saveKeystore() {
 
   var password = readlineSync.question("Password:", { hideEchoBack: true });
 
-  fs.writeFileSync(f, JSON.stringify(w.toV3(password), null, 2), "utf-8");
-  console.log("\n", f, "saved");
-  return;
+  w.toV3(password).then(v3 => {
+    fs.writeFileSync(f, JSON.stringify(v3, null, 2), "utf-8");
+    console.log("\n", f, "saved");
+    return;
+  });
 }
 
 function importToKeystore() {
@@ -46,32 +51,38 @@ function importToKeystore() {
     console.log("secret invalid, abort.");
     return;
   }
-  var w = Wallet.fromPrivateKey(ethUtil.toBuffer(secret));
+  var w = Wallet.fromPrivateKey(hexToBytes(secret));
   var f = w.getV3Filename();
   var password = readlineSync.question("Password:", { hideEchoBack: true });
-  fs.writeFileSync(f, JSON.stringify(w.toV3(password), null, 2), "utf-8");
-  console.log("\n", f, "saved");
-  return;
+  w.toV3(password).then(v3 => {
+    fs.writeFileSync(f, JSON.stringify(v3, null, 2), "utf-8");
+    console.log("\n", f, "saved");
+    return;
+  });
 }
 
 function getWalletFromKeystore(_file, _password) {
   if (fs.existsSync(_file)) {
-    try {
-      var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
-      var password;
-      if (!_password) {
-        password = readlineSync.question("Password:", { hideEchoBack: true });
-      } else {
-        password = _password;
-      }
-
-      var w = Wallet.fromV3(ks, password);
-      // console.log(w.getAddressString(), w.getPrivateKeyString());
-      return { address: w.getAddressString(), secret: w.getPrivateKeyString() };
-    } catch (e) {
-      console.log("Parse keystore file fail, check and correct it", e);
-      process.exit();
+    var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
+    var password;
+    if (!_password) {
+      password = readlineSync.question("Password:", { hideEchoBack: true });
+    } else {
+      password = _password;
     }
+
+    // var w = Wallet.fromV3(ks, password);
+    Wallet.fromV3(ks, password)
+      .then(w => {
+        return {
+          address: w.getAddressString(),
+          secret: w.getPrivateKeyString()
+        };
+      })
+      .catch(e => {
+        console.log("Parse keystore file fail, check and correct it", e);
+        process.exit();
+      });
   } else {
     console.log("Can not find", _file, "abort!");
     process.exit();

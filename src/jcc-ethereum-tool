@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 
-const program = require("commander");
+const { program } = require("commander");
 const fs = require("fs");
 const BigNumber = require("bignumber.js");
 const utils = require("jcc-ethereum-utils");
 const Keystore = require("./jcc-ethereum-keystore");
 // const SolidityFunction = require("chain3/lib/chain3/function");
-const ethers = require("ethers");
-const abiCoder = ethers.utils.defaultAbiCoder;
 const eth_ens_namehash = require('eth-ens-namehash');
 const { create2ContractAddress } = require("web3-eth-contract");
 const packageJson = require("../package.json");
@@ -43,7 +41,6 @@ program.option("--balance <Wallet address>", "get balance of address");
 program.option("--transfer <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--transferheco <Destination address>", "destination address, source address specified by keystore or config");
 program.option("--amount <amount>", "transfer amount");
-program.option("--legacy", "use with --transfer to send legacy transactions");
 
 program.option("--deploy <contract json file>", "deploy contract, if have parameter, set it in --parameters");
 program.option("--deploy2 <factory contract json file>", "deploy contract of using create2, if have parameter, set it in --parameters");
@@ -63,16 +60,17 @@ program.option("--abi <contract json file>", "abi definition");
 program.option("--contractAddr <contract address>", "contract address");
 
 program.option("--method <string>", "specified contract method name");
-program.option("--parameters <string>", "specified contract parameters which seprator by |");
+program.option("--parameters <parameter...>", "specified contract parameters which seprator by |");
 program.option("--salt <string>", "specified salt, byte32");
 program.option("--generateCreate2Addr <contract json file>", "generate create2 contract address, --contractAddr (deployer) and --salt is required");
 program.option("--encodeCallData <contract json file>", "encoding calling contract method data");
 
 program.parse(process.argv);
 
+const options = program.opts();
 
-if (program.wallet_create) {
-  if (!program.save_wallet) {
+if (options.wallet_create) {
+  if (!options.save_wallet) {
     Keystore.processCreateWallet();
   }
 
@@ -81,7 +79,7 @@ if (program.wallet_create) {
   return;
 }
 
-if (program.import_private_to_keystore) {
+if (options.import_private_to_keystore) {
   Keystore.importToKeystore();
   return;
 }
@@ -99,7 +97,7 @@ function getNetwork(_network) {
 }
 
 // 获取配置文件
-let _config = program.config;
+let _config = options.config;
 let _options = { network: 3 };
 
 // 如果文件位置没有通过参数传递
@@ -131,31 +129,47 @@ try {
   process.exit();
 }
 
-getNetwork(program.network);
+getNetwork(options.network);
 
-if (program.keystore) {
-  let keystorePath = program.keystore;
+if (options.keystore) {
+  let keystorePath = options.keystore;
   // 兼容windows下的路径
   if (keystorePath.indexOf("/") == -1 && keystorePath.indexOf("\\") == -1) {
     keystorePath = getBaseHome() + "/" + keystorePath;
   }
-  _options.wallet = Object.assign(_options.wallet, Keystore.getWalletFromKeystore(keystorePath, program.password));
+  _options.wallet = Object.assign(_options.wallet, Keystore.getWalletFromKeystore(keystorePath, options.password));
 }
 
-if (!isNaN(Number(program.gas_limit))) {
-  _options.gasLimit = Number(program.gas_limit);
+if (!isNaN(Number(options.gas_limit))) {
+  _options.gasLimit = Number(options.gas_limit);
 }
-if (!isNaN(Number(program.gas_price))) {
-  _options.gasPrice = Number(program.gas_price);
+if (!isNaN(Number(options.gas_price))) {
+  _options.gasPrice = Number(options.gas_price);
 }
-if (!isNaN(Number(program.maxFeePerGas))) {
-  _options.maxFeePerGas = Number(program.maxFeePerGas);
+if (!isNaN(Number(options.maxFeePerGas))) {
+  _options.maxFeePerGas = Number(options.maxFeePerGas);
 }
-if (!isNaN(Number(program.maxPriorityFeePerGas))) {
-  _options.maxPriorityFeePerGas = Number(program.maxPriorityFeePerGas);
+if (!isNaN(Number(options.maxPriorityFeePerGas))) {
+  _options.maxPriorityFeePerGas = Number(options.maxPriorityFeePerGas);
 }
-if (!!program.server) {
-  _options.server = program.server;
+if (!!options.server) {
+  _options.server = options.server;
+}
+if (!options.parameters) {
+  options.parameters = [];
+}
+
+function parseArgs(args) {
+  return args.map((arg) => {
+    try {
+      if ((arg.startsWith("{") && arg.endsWith("}")) || (arg.startsWith("[") && arg.endsWith("]"))) {
+        return JSON.parse(arg);
+      }
+      return arg;
+    } catch (error) {
+      return arg;
+    }
+  })
 }
 
 async function getBalance(address) {
@@ -298,7 +312,7 @@ function getFile(filename) {
 }
 
 async function deploy(compiledJson, parameters) {
-  const calldata = await encodeCallData(compiledJson, "constructor", parameters, null);
+  const calldata = await encodeCallData(compiledJson, "constructor", parameters);
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(null, 0, nonce, calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -325,8 +339,7 @@ async function deploy(compiledJson, parameters) {
 }
 
 function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
-  const send_address = _options.wallet.address;
-  console.log("send address:", send_address);
+  console.log("creator address:", contractAddr);
   salt = inst._web3.utils.encodePacked({
     type: "bytes32",
     value: salt
@@ -343,17 +356,17 @@ function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
   if (!constructor) {
     console.log("Can not find constructor in file", compiledJson, ", Please check it!");
   }
-  if (constructor.inputs.length > 0 && !parameters) {
+  if (constructor.inputs.length > 0 && parameters.length == 0) {
     console.log("miss --parameter arguments");
     process.exit();
   }
   let initCode;
   if (constructor.inputs.length == 0) {
-    parameters = [];
     initCode = _json.bytecode;
   } else {
     const typename = constructor.inputs.map((input) => input.type);
-    initCode = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, eval("[" + parameters + "]")));
+    const args = parseArgs(parameters);
+    initCode = _json.bytecode + utils.Ethereum.filter0x(inst._web3.eth.abi.encodeParameters(typename, args));
   }
   if (initCode.indexOf("0x") != 0) {
     initCode = "0x" + initCode;
@@ -363,7 +376,7 @@ function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
   return create2ContractAddress(contractAddr, salt, initCode);
 }
 
-async function encodeCallData(compiledJson, method, parameters, contractAddr) {
+async function encodeCallData(compiledJson, method, parameters) {
   let _json = getFile(compiledJson);
   let abi = _json.abi;
   let bytecode = _json.bytecode;
@@ -372,24 +385,24 @@ async function encodeCallData(compiledJson, method, parameters, contractAddr) {
     process.exit();
   }
   let sc = new utils.smartContract();
-  sc.init(contractAddr, inst, abi);
-  args = eval("[" + parameters + "]");
+  sc.init(null, inst, abi);
+  args = parseArgs(parameters);
   if (method == "constructor") {
     let constructor = abi.find((item) => item.type == "constructor");
     if (!constructor) {
       return bytecode;
     }
-    if (constructor.inputs.length > 0 && !parameters) {
+    if (constructor.inputs.length > 0 && parameters.length == 0) {
       console.log("miss --parameter arguments");
       process.exit();
     }
-    return sc._ethereumABI._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
+    return sc._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
   }
-  return await sc._ethereumABI.encode.apply(null, [method, ...args]);
+  return await sc._contract.methods[method].apply(null, args).encodeABI();
 }
 
 async function deploy2(compiledJson, contractAddr, method, parameters) {
-  const calldata = await encodeCallData(compiledJson, method, parameters, contractAddr);
+  const calldata = await encodeCallData(compiledJson, method, parameters);
   
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(contractAddr, 0, nonce, calldata);
@@ -429,101 +442,95 @@ async function deploy2(compiledJson, contractAddr, method, parameters) {
 let inst = new utils.Ethereum(_options.server, _options.network == 1);
 inst.initWeb3();
 
-if (program.block) {
-  getBlock(program.block);
+if (options.block) {
+  getBlock(options.block);
   return;
 }
 
-if (program.transaction) {
-  getTransaction(program.transaction);
+if (options.transaction) {
+  getTransaction(options.transaction);
   return;
 }
 
-if (program.traceTransaction) {
-    getTraceTransaction(program.traceTransaction);
+if (options.traceTransaction) {
+    getTraceTransaction(options.traceTransaction);
     return;
 }
 
-if (program.receipt) {
-  getTransactionReceipt(program.receipt);
+if (options.receipt) {
+  getTransactionReceipt(options.receipt);
   return;
 }
 
-if (program.deploy) {
-  deploy(program.deploy, program.parameters);
+if (options.deploy) {
+  deploy(options.deploy, options.parameters);
   return;
 }
 
-if (program.balance) {
-  getBalance(program.balance);
+if (options.balance) {
+  getBalance(options.balance);
   return;
 }
 
-if (program.getNonce) {
+if (options.getNonce) {
   getCurrentNonce(_options.wallet.address);
   return;
 }
-if (program.transfer) {
-  var amount = Number(program.amount);
+if (options.transfer) {
+  var amount = Number(options.amount);
   if (isNaN(amount)) {
-    console.log("amount is", program.amount, "invalid");
+    console.log("amount is", options.amount, "invalid");
     process.exit();
   }
-  transfer(program.transfer, amount);
+  transfer(options.transfer, amount);
   return;
 }
-if (program.transferheco) {
-  var amount = Number(program.amount);
+if (options.transferheco) {
+  var amount = Number(options.amount);
   if (isNaN(amount)) {
-    console.log("amount is", program.amount, "invalid");
+    console.log("amount is", options.amount, "invalid");
     process.exit();
   }
-  transferheco(program.transferheco, amount);
+  transferheco(options.transferheco, amount);
   return;
 }
 
-if (program.generateCreate2Addr) {
-  if (!program.contractAddr || !program.salt) {
+if (options.generateCreate2Addr) {
+  if (!options.contractAddr || !options.salt) {
     console.log("Please specify contract address and salt");
     process.exit();
   }
-  if (!program.parameters) {
-    program.parameters = "";
-  }
 
-  const address = generateCreate2Addr(program.generateCreate2Addr, program.contractAddr, program.salt, program.parameters);
+  const address = generateCreate2Addr(options.generateCreate2Addr, options.contractAddr, options.salt, options.parameters);
   console.log("create2 contract address:", address);
   return;
 }
 
-if (program.encodeCallData) {
-  if (!program.method || (program.method != "constructor" && !program.contractAddr)) {
-    console.log("Please specify method, if method is not constructor, contract address is also required");
+if (options.encodeCallData) {
+  if (!options.method) {
+    console.log("Please specify method");
     process.exit();
   }
-  if (!program.parameters) {
-    program.parameters = "";
-  }
 
-  encodeCallData(program.encodeCallData, program.method, program.parameters, program.contractAddr).then((res) => {
+  encodeCallData(options.encodeCallData, options.method, options.parameters).then((res) => {
     console.log("call data:", res);
   });
   return;
 }
 
-if (program.deploy2) {
-  deploy2(program.deploy2, program.contractAddr, program.method, program.parameters);
+if (options.deploy2) {
+  deploy2(options.deploy2, options.contractAddr, options.method, options.parameters);
   return;
 }
 
 function getMethodCall(method, parameters) {
-  if (!parameters) {
+  if (parameters.length == 0) {
     return 'sc.callABI("' + method + '")';
   }
   return 'sc.callABI("' + method + '",' + parameters + ")";
 }
 
-async function callContract(abiJson, contractAddr, method, parameters) {
+async function callContract(abiJson, contractAddr, method, parameters, nonce) {
   let _json = getFile(abiJson);
   let abi = _json.abi;
   let sc = new utils.smartContract();
@@ -540,10 +547,10 @@ async function callContract(abiJson, contractAddr, method, parameters) {
   }
   const { stateMutability } = abiItem;
   if (stateMutability === "view" || stateMutability === "pure") {
-    const byte = await eval(getMethodCall(method, parameters));
+    const byte = await sc.callABI(method, ...parameters);
     console.log("return value:", byte);
   } else {
-    const calldata = await eval(getMethodCall(method, parameters));
+    const calldata = await sc.callABI(method, ...parameters);
     let amount = "0";
     if (amount) {
       amount = amount + "";
@@ -567,15 +574,12 @@ async function callContract(abiJson, contractAddr, method, parameters) {
   }
 }
 
-if (program.abi) {
-  if (!program.contractAddr || !program.method) {
+if (options.abi) {
+  if (!options.contractAddr || !options.method) {
     console.log("Please specify contract address, method and parameters");
     process.exit();
   }
-  if (!program.parameters) {
-    program.parameters = "";
-  }
 
-  callContract(program.abi, program.contractAddr, program.method, program.parameters);
+  callContract(options.abi, options.contractAddr, options.method, options.parameters, options.nonce);
   return;
 }
