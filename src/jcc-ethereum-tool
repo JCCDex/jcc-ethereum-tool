@@ -6,8 +6,6 @@ const BigNumber = require("bignumber.js");
 const utils = require("jcc-ethereum-utils");
 const Keystore = require("./jcc-ethereum-keystore");
 // const SolidityFunction = require("chain3/lib/chain3/function");
-const ethers = require("ethers");
-const abiCoder = ethers.utils.defaultAbiCoder;
 const eth_ens_namehash = require('eth-ens-namehash');
 const { create2ContractAddress } = require("web3-eth-contract");
 const packageJson = require("../package.json");
@@ -523,7 +521,7 @@ function getMethodCall(method, parameters) {
   return 'sc.callABI("' + method + '",' + parameters + ")";
 }
 
-async function callContract(abiJson, contractAddr, method, parameters) {
+async function callContract(abiJson, contractAddr, method, parameters, nonce) {
   let _json = getFile(abiJson);
   let abi = _json.abi;
   let sc = new utils.smartContract();
@@ -576,6 +574,6 @@ if (program.abi) {
     program.parameters = "";
   }
 
-  callContract(program.abi, program.contractAddr, program.method, program.parameters);
+  callContract(program.abi, program.contractAddr, program.method, program.parameters, program.nonce);
   return;
 }
