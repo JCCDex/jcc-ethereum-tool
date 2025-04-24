@@ -1,25 +1,40 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
-const { Ethereum } = require("jcc-ethereum-utils");
+const { Ethereum, smartContract } = require("jcc-ethereum-utils");
 const fs = require("fs");
 const path = require("path");
-const { importToKeystore, processCreateWallet, saveKeystore, getWalletFromKeystore } = require("./jcc-ethereum-keystore");
+const { toWei } = require("web3-utils");
+const BigNumber = require("bignumber.js");
+const {
+  importToKeystore,
+  processCreateWallet,
+  saveKeystore,
+  getWalletFromKeystore
+} = require("./jcc-ethereum-keystore");
 const program = new Command();
 
 const getBaseHome = () => {
-  return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
+  return path.join(__dirname, "jcc-ethereum-tool");
 }
 
 program.option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json");
 program.option("--keystore <keystore file>", "keystore file path");
 program.option("--password <keystore file password>", "keystore password");
-program.option("--node <keystore file password>", "keystore password");
+program.option("--gas_price <number>", "specified gasPrice, default 10000000000");
+program.option("--gas_limit <number>", "specified gas limit, default 50000");
+program.option("--maxFeePerGas <number>", "specified maxFeePerGas");
+program.option("--maxPriorityFeePerGas <number>", "specified maxPriorityFeePerGas");
+program.option("--server <Evm node rpc>", "rpc node");
 
-let ethereumInst;
 let _options = {};
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const absoultePath = (file) => {
+  const relativePath = path.relative(__dirname, file);
+  return path.resolve(__dirname, relativePath);
+}
 
 program
   .command("block")
@@ -62,17 +77,44 @@ program
     saveKeystore();
   });
 
+const EVAL_OPERATIONS = ["toWei", "BigNumber"];
+
+// 判断参数是否需要执行eval
+const shouldEval = (arg) => {
+  return EVAL_OPERATIONS.some((operation) => arg.includes(operation));
+}
+
+const evalArgs = (args) => {
+  return args.map((arg) => {
+    return shouldEval(arg) ? eval(arg) : arg;
+  });
+}
+
+program
+  .command("abi")
+  .description("abi操作")
+  .argument('<abi>', 'abi文件')
+  .argument('<address>', '合约地址')
+  .argument('<method>', 'abi方法')
+  .argument('[args...]', 'abi方法参数')
+  .action(async (abi, address, method, args) => {
+    await sleep(0);
+    const abiPath = absoultePath(abi);
+    const abiFile = fs.readFileSync(abiPath, "utf-8");
+    const contract = new smartContract();
+    contract.init(address, ethereumInst, JSON.parse(abiFile));
+    const res = await contract.callABI(method, ...evalArgs(args));
+    console.log(`abi ${method} result: `, res);
+  });
 
 program.parse(process.argv);
 
 const options = program.opts();
 
 const getWallet = async () => {
-  if (options.keystore) {
-    let keystorePath = options.keystore;
-    // 首先获取相对路径
-    const relativePath = path.relative(__dirname, keystorePath);
-    const file = path.resolve(__dirname, relativePath);
+  const keystore = options.keystore;
+  if (keystore) {
+    const file = absoultePath(keystore);
     const wallet = await getWalletFromKeystore(file, options.password);
     return wallet;
   }
@@ -82,9 +124,7 @@ const getWallet = async () => {
 const getConfig = () => {
   let config = options.config;
   if (config) {
-    // 如果是相对路径，则转换为绝对路径
-    const relativePath = path.relative(__dirname, config);
-    config = path.resolve(__dirname, relativePath);
+    config = absoultePath(config);
   } else {
     config = path.join(__dirname, "config.json");
   }
@@ -93,21 +133,28 @@ const getConfig = () => {
     process.exit();
   }
   const data = fs.readFileSync(config, "utf-8");
-  return JSON.parse(data);
+  const opts = JSON.parse(data);
+  if (!opts.gasLimit) {
+    opts.gasLimit = options.gas_limit || 50000;
+  }
+  if (!opts.gasPrice) {
+    opts.gasPrice = options.gas_price || 10000000000;
+  }
+  if (options.maxFeePerGas) {
+    opts.maxFeePerGas = options.maxFeePerGas;
+  }
+  if (options.maxPriorityFeePerGas) {
+    opts.maxPriorityFeePerGas = options.maxPriorityFeePerGas;
+  }
+  if (options.server) {
+    opts.server = options.server;
+  }
+
+  return opts;
 }
 
 
 _options = getConfig();
 
-if (!_options.gasLimit) {
-  _options.gasLimit = 50000;
-}
-if (!_options.gasPrice) {
-  // 10G
-  _options.gasPrice = 10000000000;
-}
-
-console.log(_options);
-
-ethereumInst = new Ethereum(_options.server);
+const ethereumInst = new Ethereum(_options.server);
 ethereumInst.initWeb3();
