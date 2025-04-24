@@ -15,7 +15,7 @@ const {
 const program = new Command();
 
 const getBaseHome = () => {
-  return path.join(__dirname, "jcc-ethereum-tool");
+  return path.join(__dirname);
 }
 
 program.option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json");
@@ -94,6 +94,10 @@ program
   .command("abi")
   .description("abi操作")
   .argument('<abi>', 'abi文件')
+  .addHelpText('after', `Examples:
+    获取合约decimals: jcc-ethereum-tool abi <abi> <contractAddress> decimals
+    获取token余额: jcc-ethereum-tool abi <abi> <contractAddress> balanceOf <address>`)
+
   .argument('<address>', '合约地址')
   .argument('<method>', 'abi方法')
   .argument('[args...]', 'abi方法参数')
