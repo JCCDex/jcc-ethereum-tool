@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+
+const { Command } = require('commander');
+const { Ethereum } = require("jcc-ethereum-utils");
+const fs = require("fs");
+const path = require("path");
+const { importToKeystore, processCreateWallet, saveKeystore, getWalletFromKeystore } = require("./jcc-ethereum-keystore");
+const program = new Command();
+
+const getBaseHome = () => {
+  return (process.env.HOME || process.env.USERPROFILE) + "/.jcc-ethereum-tool";
+}
+
+program.option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json");
+program.option("--keystore <keystore file>", "keystore file path");
+program.option("--password <keystore file password>", "keystore password");
+program.option("--node <keystore file password>", "keystore password");
+
+let ethereumInst;
+let _options = {};
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+program
+  .command("block")
+  .description("获取区块信息")
+  .argument('<block>', '区块')
+  .action(async (block) => {
+    await sleep(0); // 将该任务插入宏任务
+    console.log("block: ", block)
+    const blockInfo = await ethereumInst.getBlock(block);
+    console.log("blockInfo: ", blockInfo)
+  });
+
+
+program
+  .command("import_private_to_keystore")
+  .description("导入私钥生成keystore")
+  .action(() => {
+    importToKeystore();
+  });
+
+program.
+  command("getNonce")
+  .description("获取nonce")
+  .action(async () => {
+    await sleep(0);
+    const wallet = await getWallet();
+    console.log("wallet: ", wallet);
+    const nonce = await ethereumInst.getNonce(wallet?.address);
+    console.log("nonce: ", nonce);
+  });
+
+program
+  .command("wallet_create")
+  .description("创建钱包")
+  .option('--save_wallet', '是否保存钱包')
+  .action(({ save_wallet }) => {
+    if (!save_wallet) {
+      processCreateWallet();
+    }
+    saveKeystore();
+  });
+
+
+program.parse(process.argv);
+
+const options = program.opts();
+
+const getWallet = async () => {
+  if (options.keystore) {
+    let keystorePath = options.keystore;
+    // 首先获取相对路径
+    const relativePath = path.relative(__dirname, keystorePath);
+    const file = path.resolve(__dirname, relativePath);
+    const wallet = await getWalletFromKeystore(file, options.password);
+    return wallet;
+  }
+  return _options.wallet;
+}
+
+const getConfig = () => {
+  let config = options.config;
+  if (config) {
+    // 如果是相对路径，则转换为绝对路径
+    const relativePath = path.relative(__dirname, config);
+    config = path.resolve(__dirname, relativePath);
+  } else {
+    config = path.join(__dirname, "config.json");
+  }
+  if (!fs.existsSync(config)) {
+    console.log("can not get", config, "file, create it manula!");
+    process.exit();
+  }
+  const data = fs.readFileSync(config, "utf-8");
+  return JSON.parse(data);
+}
+
+
+_options = getConfig();
+
+if (!_options.gasLimit) {
+  _options.gasLimit = 50000;
+}
+if (!_options.gasPrice) {
+  // 10G
+  _options.gasPrice = 10000000000;
+}
+
+console.log(_options);
+
+ethereumInst = new Ethereum(_options.server);
+ethereumInst.initWeb3();
