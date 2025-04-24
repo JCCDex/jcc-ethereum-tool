@@ -298,7 +298,7 @@ function getFile(filename) {
 }
 
 async function deploy(compiledJson, parameters) {
-  const calldata = await encodeCallData(compiledJson, "constructor", parameters, null);
+  const calldata = await encodeCallData(compiledJson, "constructor", parameters);
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(null, 0, nonce, calldata);
   let signed = await inst.signTransaction(tx, _options.wallet.secret);
@@ -363,7 +363,7 @@ function generateCreate2Addr(compiledJson, contractAddr, salt, parameters) {
   return create2ContractAddress(contractAddr, salt, initCode);
 }
 
-async function encodeCallData(compiledJson, method, parameters, contractAddr) {
+async function encodeCallData(compiledJson, method, parameters) {
   let _json = getFile(compiledJson);
   let abi = _json.abi;
   let bytecode = _json.bytecode;
@@ -372,7 +372,7 @@ async function encodeCallData(compiledJson, method, parameters, contractAddr) {
     process.exit();
   }
   let sc = new utils.smartContract();
-  sc.init(contractAddr, inst, abi);
+  sc.init(null, inst, abi);
   args = eval("[" + parameters + "]");
   if (method == "constructor") {
     let constructor = abi.find((item) => item.type == "constructor");
@@ -383,13 +383,13 @@ async function encodeCallData(compiledJson, method, parameters, contractAddr) {
       console.log("miss --parameter arguments");
       process.exit();
     }
-    return sc._ethereumABI._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
+    return sc._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
   }
-  return await sc._ethereumABI.encode.apply(null, [method, ...args]);
+  return sc._contract.methods[method].apply(null, args).encodeABI();
 }
 
 async function deploy2(compiledJson, contractAddr, method, parameters) {
-  const calldata = await encodeCallData(compiledJson, method, parameters, contractAddr);
+  const calldata = await encodeCallData(compiledJson, method, parameters);
   
   let nonce = await getNonce(_options.wallet.address);
   let tx = await getTx(contractAddr, 0, nonce, calldata);
@@ -497,15 +497,15 @@ if (program.generateCreate2Addr) {
 }
 
 if (program.encodeCallData) {
-  if (!program.method || (program.method != "constructor" && !program.contractAddr)) {
-    console.log("Please specify method, if method is not constructor, contract address is also required");
+  if (!program.method) {
+    console.log("Please specify method");
     process.exit();
   }
   if (!program.parameters) {
     program.parameters = "";
   }
 
-  encodeCallData(program.encodeCallData, program.method, program.parameters, program.contractAddr).then((res) => {
+  encodeCallData(program.encodeCallData, program.method, program.parameters).then((res) => {
     console.log("call data:", res);
   });
   return;
