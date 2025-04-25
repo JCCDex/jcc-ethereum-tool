@@ -523,7 +523,7 @@ function getMethodCall(method, parameters) {
   return 'sc.callABI("' + method + '",' + parameters + ")";
 }
 
-async function callContract(abiJson, contractAddr, method, parameters) {
+async function callContract(abiJson, contractAddr, method, parameters, nonce) {
   let _json = getFile(abiJson);
   let abi = _json.abi;
   let sc = new utils.smartContract();
@@ -576,6 +576,6 @@ if (program.abi) {
     program.parameters = "";
   }
 
-  callContract(program.abi, program.contractAddr, program.method, program.parameters);
+  callContract(program.abi, program.contractAddr, program.method, program.parameters, program.nonce);
   return;
 }
