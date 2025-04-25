@@ -58,27 +58,25 @@ function importToKeystore() {
   });
 }
 
-function getWalletFromKeystore(_file, _password) {
+async function getWalletFromKeystore(_file, _password) {
   if (fs.existsSync(_file)) {
-    var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
-    var password;
-    if (!_password) {
-      password = readlineSync.question("Password:", { hideEchoBack: true });
-    } else {
-      password = _password;
+    try {
+      var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
+      var password;
+      if (!_password) {
+        password = readlineSync.question("Password:", { hideEchoBack: true });
+      } else {
+        password = _password;
+      }
+      const w = await Wallet.fromV3(ks, password);
+      return {
+        address: w.getAddressString(),
+        secret: w.getPrivateKeyString()
+      };
+    } catch (error) {
+      console.log("Parse keystore file fail, check and correct it", e);
+      process.exit();
     }
-
-    Wallet.fromV3(ks, password)
-      .then(w => {
-        return {
-          address: w.getAddressString(),
-          secret: w.getPrivateKeyString()
-        };
-      })
-      .catch(e => {
-        console.log("Parse keystore file fail, check and correct it", e);
-        process.exit();
-      });
   } else {
     console.log("Can not find", _file, "abort!");
     process.exit();
