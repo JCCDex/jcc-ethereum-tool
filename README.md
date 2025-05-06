@@ -21,7 +21,6 @@ sudo npm install -g jcc-ethereum-tool --unsafe-perm=true
 ```javascript
 {
   "server" : "http://localhost:8546",
-  "network" : 101,
   "gasPrice" : 20000000000,
   "gasLimit" : 20000,
   "wallet" : {"address": "0x1234", "secret": "0x1223"}
@@ -59,14 +58,14 @@ jcc-ethereum-tool import_private_to_keystore
 - 获取余额
 
 ```javascript
-jcc-ethereum-tool --network 99 balance 0x1111 --server http://localhost:8545
+jcc-ethereum-tool balance 0x1111 --server http://localhost:8545
 ```
 
 - 转账
 
 ```javascript
 # 从配置 (config.json) 的钱包向目的地址转账
-jcc-ethereum-tool transfer 0x2222 0.000001 --network 101
+jcc-ethereum-tool transfer 0x2222 0.000001
 ```
 
 - 查询区块
