@@ -301,6 +301,11 @@ program
     }
   })
 
+function isHexadecimalWithPrefix(str) {
+  const regex = /^0x[0-9a-fA-F]+$/i;
+  return regex.test(str);
+}
+
 async function encodeCallData(compiledJson, method, args) {
   let _json = getFile(compiledJson);
   let abi = _json.abi;
@@ -313,15 +318,33 @@ async function encodeCallData(compiledJson, method, args) {
   sc.init(null, inst, abi);
   args = handleArgs(args); // 处理参数
   if (method == "constructor") {
+    let initCode = "";
+    if(typeof bytecode == "object") {
+      if(typeof bytecode.object == "string") {
+        initCode = bytecode.object;
+      }else{
+        throw new Error("Invalid bytecode format");
+      }
+    }else if (typeof bytecode == "string"){
+      initCode = bytecode;
+    }else{
+      throw new Error("Invalid bytecode format");
+    }
+    if (!initCode.startsWith("0x")) {
+      initCode = "0x" + initCode;
+    }
+    if (!isHexadecimalWithPrefix(initCode)) {
+      throw new Error("The generated initcode is not hexadecimal, please check the bytecode.");
+    }
     let constructor = abi.find((item) => item.type == "constructor");
     if (!constructor) {
-      return bytecode;
+      return initCode;
     }
     if (constructor.inputs.length > 0 && args.length == 0) {
       console.log("miss --parameter arguments");
       process.exit();
     }
-    return sc._contract.deploy({ data: "0x" + bytecode, arguments: args }).encodeABI();
+    return sc._contract.deploy({ data: initCode, arguments: args }).encodeABI();
   }
   return sc._contract.methods[method].apply(null, args).encodeABI();
 }
@@ -452,6 +475,44 @@ program
       }
     }
     console.log("If you can't get the contract address, you can try tracking the transaction or checking it in the browser in the future");
+  })
+
+program
+  .command("getAbiOfFile")
+  .description("Extract the abi field from the contract file and put it into abi.json. The contract file must contain the abi field.")
+  .argument('<contractFile file>', 'Contract file, requiring the file to contain the abi field.')
+  .action(async (contractFile) => {
+    try {
+      let _json = getFile(contractFile);
+      if (_json.abi) {
+        let abi = _json.abi;
+        fs.writeFileSync("./abi.json", JSON.stringify(abi, null, 2));
+        console.log("abi.json has been generated successfully.");
+      }else{
+        console.log("The contract file does not contain the abi field.");
+      }
+    } catch (error) {
+      throw error;
+    }
+  })
+
+program
+  .command("getBytecodeOfFile")
+  .description("Extract the bytecode field from the contract file and put it into bytecode.json. The contract file must contain the bytecode field.")
+  .argument('<contractFile file>', 'Contract file, requiring the file to contain the bytecode field.')
+  .action(async (contractFile) => {
+    try {
+      let _json = getFile(contractFile);
+      if (_json.bytecode) {
+        let bytecode = _json.bytecode;
+        fs.writeFileSync("./bytecode.json", JSON.stringify(bytecode, null, 2));
+        console.log("bytecode.json has been generated successfully.");
+      }else{
+        console.log("The contract file does not contain the bytecode field.");
+      }
+    } catch (error) {
+      throw error;
+    }
   })
 
 
