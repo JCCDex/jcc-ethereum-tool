@@ -177,3 +177,21 @@ jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627"
 // 授权转账
 jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --gas_price 1000000000 abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transferFrom" "0xowner address" "0xdestination address" web3.utils.toWei("300")
 ```
+
+- 从编译好的合约文件中提取 abi、bytecode
+
+```javascript
+jcc-ethereum-tool getAbiOfFile contractFilePath // 获取合约文件中的abi，并提取存放在abi.json
+jcc-ethereum-tool getBytecodeOfFile contractFilePath //获取合约文件中的bytecode，并提取存放在bytecode.json
+
+// 请确保编译好的合约文件存在abi、bytecode字段
+```
+
+注: 使用文件时，请确保格式为:
+
+```javascript
+{
+    bytecode: "hex string" or {object: "hex string" ...},
+    abi: [...]
+}
+```
