@@ -241,7 +241,12 @@ function handleArgs(args) {
       if ((arg.startsWith("{") && arg.endsWith("}")) || (arg.startsWith("[") && arg.endsWith("]"))) {
         return JSON.parse(arg);
       }
-      return shouldEval(arg) ? eval(arg) : arg;
+      arg = shouldEval(arg) ? eval(arg) : arg;
+      // 如果传入的是bignumber命令，需要转换成字符串
+      if(arg instanceof BigNumber) {
+        return arg.toString();
+      }
+      return arg;
     } catch (error) {
       return arg;
     }

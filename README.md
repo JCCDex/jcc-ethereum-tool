@@ -132,6 +132,7 @@ jcc-ethereum-tool encodeCallData "./contract.json" FactoryAddress "method" arg1 
 jcc-ethereum-tool 支持任意合约的调用，一般来说需要以下几个参数
 
 - 指定 abi 文件，便于解析各种调用签名和参数，可以指定成自己的 abi 文件
+- 对于调用 abi 的参数（arg），如果是对象、数组或者语句必须用双引号引起来。
 - 对于修改账本的调用，gas 数量需要自己指定，默认是 20000，gasPrice 默认 20G
 - 数量尤其是小数位的推算，可以自己使用 chain3 的函数运算
 - 为支持 ens，增加了 namehash 函数支持
@@ -160,22 +161,22 @@ jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627"
 - ERC20 的转账
 
 ```javascript
-jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transfer" "0xaddress....." web3.utils.toWei("23.1")
+jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transfer" "0xaddress....." "web3.utils.toWei(23.1, 'ether')"
 // web3.utils.toWei("23.1") 这个可以利用函数转义方式将ERC20的数量展开，但是ERC20也有不是标准的18位小数的，如果需要自行处理小数位，要书写成下面的样子
-jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transfer" "0xaddress....." BigNumber(23.1*10**18)
+jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transfer" "0xaddress....." "BigNumber(23.1*10**18)"
 ```
 
 - ERC20 的授权转账
 
 ```javascript
 // 授权0x5d819874014dfc29ec6d56caacc4e95f2dd33352从指定账户转账额度
-jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "approve" "0xspender address" web3.utils.toWei("333")
+jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "approve" "0xspender address" "web3.utils.toWei(333, 'ether')"
 
 // 查询授权数量
 jcc-ethereum-tool abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "allowance" "0xowner address" "0xspender address"
 
 // 授权转账
-jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --gas_price 1000000000 abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transferFrom" "0xowner address" "0xdestination address" web3.utils.toWei("300")
+jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword --gas_limit 50000 --gas_price 1000000000 abi erc20abi.json "0x2bbe1b5b974aa75369ec72200c9c7da717faa627" "transferFrom" "0xowner address" "0xdestination address" "web3.utils.toWei(300, 'ether')"
 ```
 
 - 从编译好的合约文件中提取 abi、bytecode
