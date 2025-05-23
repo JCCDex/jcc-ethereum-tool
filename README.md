@@ -29,10 +29,12 @@ sudo npm install -g jcc-ethereum-tool --unsafe-perm=true
 
 **_注意：不能确认在安全情况下，不要在配置文件中使用明文保存密钥，尽量使用 keystore 文件_**
 
-用户可以指定配置文件路径
+用户可以在进行具体操作时（如 transfer, balance)指定配置文件路径
 
 ```javascript
 jcc-ethereum-tool --config myconfig.json
+// or
+jcc-ethereum-tool --config myconfig.json balance 0x1111
 ```
 
 ## normal operation 常规操作
@@ -106,7 +108,7 @@ jcc-ethereum-tool --gas_limit 3800000 deploy "./MAYAToken.json" arg1 arg2
 
 // 使用create2发行合约
 // deploy2 <abi file> <contract address> <method name> [args...]
-jcc-ethereum-tool --gas_limit 3800000 deploy2 "./FactoryContract.json" FactoryAddress deploy arg1 arg2
+jcc-ethereum-tool --gas_limit 3800000 deploy2 "./FactoryContract.json" FactoryAddress deployMethod arg1 arg2
 // 使用create2发行合约，通过工厂合约进行发布，于合约调用类似，需要提供abi、调用的method名以及可能需要的parameters
 ```
 
