@@ -25,7 +25,7 @@ program
   .option("--config <config file>", "specified config file, defaut is " + getBaseHome() + "/config.json")
   .option("--keystore <keystore file>", "keystore file path")
   .option("--password <keystore file password>", "keystore password")
-  .option("--server <ETH node address>", "node rpc address")
+  .option("--server <ETH node url>", "node rpc url")
   .option("--nonce <number>", "specified nonce")
   .option("--gas_price <number>", "specified gasPrice, default 10000000000")
   .option("--gas_limit <number>", "specified gas limit, default 50000")
@@ -156,7 +156,7 @@ program
 program
   .command("transaction")
   .description("get transaction by hash")
-  .argument('<hash>', 'transaction hash')
+  .argument('<txHash>', 'transaction hash')
   .action(async (hash) => {
     await sleep(0);
     let info = await inst.getTransaction(hash);
@@ -166,7 +166,7 @@ program
 program
   .command("traceTransaction")
   .description("trace transactions by transaction hash")
-  .argument('<hash>', 'transaction hash')
+  .argument('<txHash>', 'transaction hash')
   .action(async (hash) => {
     await sleep(0);
     const info = await rpc_getTraceTransaction(hash).catch((err) => {
@@ -179,7 +179,7 @@ program
 program
   .command("receipt")
   .description("get transaction receipt by hash")
-  .argument('<hash>', 'transaction hash')
+  .argument('<txHash>', 'transaction hash')
   .action(async (hash) => {
     await sleep(0);
     let info = await inst.getTransactionReceipt(hash);

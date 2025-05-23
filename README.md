@@ -32,8 +32,6 @@ sudo npm install -g jcc-ethereum-tool --unsafe-perm=true
 用户可以在进行具体操作时（如 transfer, balance)指定配置文件路径
 
 ```javascript
-jcc-ethereum-tool --config myconfig.json
-// or
 jcc-ethereum-tool --config myconfig.json balance 0x1111
 ```
 
@@ -60,12 +58,14 @@ jcc-ethereum-tool import_private_to_keystore
 - 获取余额
 
 ```javascript
+//balance <address> --server <ETH node url>
 jcc-ethereum-tool balance 0x1111 --server http://localhost:8545
 ```
 
 - 转账
 
 ```javascript
+//transfer <Destination address> <amount>
 # 从配置 (config.json) 的钱包向目的地址转账
 jcc-ethereum-tool transfer 0x2222 0.000001
 ```
@@ -73,6 +73,7 @@ jcc-ethereum-tool transfer 0x2222 0.000001
 - 查询区块
 
 ```javascript
+//block <block>
 jcc-ethereum-tool block latest
 或者
 jcc-ethereum-tool block 1234
@@ -81,12 +82,14 @@ jcc-ethereum-tool block 1234
 - 查询交易
 
 ```javascript
+//transaction <txHash>
 jcc-ethereum-tool transaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
 ```
 
 - 跟踪交易
 
 ```javascript
+//traceTransaction <txHash>
 jcc-ethereum-tool traceTransaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
 // 跟踪交易，会输出所有的内部调用，包括合约调用。请选择支持debug_traceTransaction的节点
 ```
@@ -94,6 +97,7 @@ jcc-ethereum-tool traceTransaction 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9
 - 查询交易收据
 
 ```javascript
+//receipt <txHash>
 jcc-ethereum-tool receipt 0xbb15e089f12c9d4fcd82e47c3d3b56940c9ad6e51a9c7b5dfec4337f5fb4f58e
 ```
 
@@ -184,6 +188,9 @@ jcc-ethereum-tool --keystore keystorefile.json --password yourkeystorepassword -
 - 从编译好的合约文件中提取 abi、bytecode
 
 ```javascript
+//getAbiOfFile <contractFile file>
+//getBytecodeOfFile <contractFile file>
+
 jcc-ethereum-tool getAbiOfFile contractFilePath // 获取合约文件中的abi，并提取存放在abi.json
 jcc-ethereum-tool getBytecodeOfFile contractFilePath //获取合约文件中的bytecode，并提取存放在bytecode.json
 
