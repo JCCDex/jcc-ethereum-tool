@@ -278,10 +278,11 @@ program
 
     const { stateMutability } = abiItem;
     if (stateMutability === "view" || stateMutability === "pure") {
-      const byte = await sc.callABI(method, ...args);
+      // const byte = await sc.callABI(method, ...args);
+      const byte = await sc._contract.methods[method].apply(null, args).call();
       console.log("return value:", byte);
     } else {
-      const calldata = await sc.callABI(method, ...args);
+      const calldata = sc._contract.methods[method].apply(null, args).encodeABI();
       let amount = "0";
       if (amount) {
         amount = amount + "";
