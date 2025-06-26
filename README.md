@@ -205,3 +205,46 @@ jcc-ethereum-tool getBytecodeOfFile contractFilePath //获取合约文件中的b
     abi: [...]
 }
 ```
+
+## safe 的操作
+
+- 创建生成 safe account (safe proxy 合约地址)
+
+```javascript
+// generateSafe <threshold number> <saltNonce> <owners...>
+jcc-ethereum-tool generateSafe threshold saltNonce owner1 owner2
+
+// generateKnownSafe <safeAddress address> <chainId number>
+// 需要在当前链上部署(生成) chainId 链上 safe address
+jcc-ethereum-tool generateKnownSafe safeAddress chainId
+```
+
+- 生成并签署转账的安全交易
+
+生成好的 safe transaction, 存储在本地当前目录下。内容包含收集的签名和交易内容。
+
+```javascript
+// safeTransfer <safeAddress address> <Destination address> <amount>
+jcc-ethereum-tool safeTransfer safeAddress destination amount
+```
+
+- 生成并签署合约交互的安全交易
+
+```javascript
+// safeContractTx <safeAddress address> <abi file> <contract address> <method name> [args...]
+jcc-ethereum-tool safeContractTx safeAddress abi contract method arg1 arg2
+```
+
+- 签署本地的安全交易文件
+
+```javascript
+// safeConfirm <safeAddress address> <safeTxFile file>
+jcc-ethereum-tool safeConfirm safeAddress safeTxFile
+```
+
+- 执行已经收集签名完成的安全交易文件
+
+```javascript
+// executeSafeTx <safeAddress address> <safeTxFile file>
+jcc-ethereum-tool executeSafeTx safeAddress safeTxFile
+```

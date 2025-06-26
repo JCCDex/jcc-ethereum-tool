@@ -36,6 +36,8 @@
   "dependencies": {
     "@ethereumjs/util": "^9.1.0",
     "@ethereumjs/wallet": "^2.0.4",
+    "@safe-global/api-kit": "^3.0.2",
+    "@safe-global/protocol-kit": "^6.0.5",
     "bignumber.js": "^9.0.0",
     "commander": "^13.1.0",
     "eth-ens-namehash": "^2.0.8",

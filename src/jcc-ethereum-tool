@@ -8,6 +8,8 @@ const BigNumber = require("bignumber.js");
 const utils = require("jcc-ethereum-utils");
 const eth_ens_namehash = require('eth-ens-namehash');
 const { create2ContractAddress } = require("web3-eth-contract");
+const Safe = require("@safe-global/protocol-kit").default;
+const SafeApiKit = require('@safe-global/api-kit').default;
 
 const program = new Command();
 
@@ -95,16 +97,17 @@ async function getNonce(address) {
   return options.nonce;
 }
 
-async function getTx(dest, amount, nonce, calldata) {
+async function getTx(from, dest, amount, nonce, calldata) {
+  from = from || _options.wallet.address;
   let latestBlock = await inst.getBlock("latest");
   const baseFeePerGas = latestBlock.baseFeePerGas;
   let tx;
   if(baseFeePerGas) {
     let feeData = await getFeeData();
-    tx = inst.get1559Tx(_options.wallet.address, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), calldata);
+    tx = inst.get1559Tx(from, dest, nonce, _options.gasLimit, feeData.maxFeePerGas, feeData.maxPriorityFeePerGas, amount.toString(), calldata);
   } else {
     let gasPrice = await getGasPrice();
-    tx = inst.getTx(_options.wallet.address, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), calldata);
+    tx = inst.getTx(from, dest, nonce, _options.gasLimit, gasPrice, amount.toString(), calldata);
   }
   return tx;
 }
@@ -215,7 +218,8 @@ program
     await sleep(0);
     const wallet = await getWallet();
     const nonce = await getNonce(wallet.address);
-    const tx = await getTx(dist, amount, nonce, "");
+    let tx = await getTx(null, dist, amount, nonce, "");
+    tx = { ...tx, data: "" };
     console.log("tx:", tx, "raw:", await inst.signTransaction(tx, wallet.secret));
   
     let hash = await inst.sendSignedTransaction(await inst.signTransaction(tx, wallet.secret));
@@ -294,7 +298,7 @@ program
       // }
       _options.nonce = await getNonce(wallet.address);
 
-      let tx = await getTx(contract, amount, _options.nonce, calldata);
+      let tx = await getTx(null, contract, amount, _options.nonce, calldata);
       console.log("tx:", tx);
   
       let signed = await inst.signTransaction(tx, wallet.secret);
@@ -365,7 +369,7 @@ program
     const wallet = await getWallet();
     const calldata = await encodeCallData(jsonFile, "constructor", args);
     let nonce = await getNonce(wallet.address);
-    let tx = await getTx(null, 0, nonce, calldata);
+    let tx = await getTx(null, null, 0, nonce, calldata);
     let signed = await inst.signTransaction(tx, _options.wallet.secret);
     let hash;
     try {
@@ -451,7 +455,7 @@ program
     const wallet = await getWallet();
     const calldata = await encodeCallData(abiFile, method, args);
     let nonce = await getNonce(wallet.address);
-    let tx = await getTx(contractAddress, 0, nonce, calldata);
+    let tx = await getTx(null, contractAddress, 0, nonce, calldata);
     let signed = await inst.signTransaction(tx, wallet.secret);
     let hash;
     try {
@@ -516,6 +520,269 @@ program
       }else{
         console.log("The contract file does not contain the bytecode field.");
       }
+    } catch (error) {
+      throw error;
+    }
+  })
+
+async function generateSafe(safeAccountConfig, saltNonce, version, isL1SafeSingleton){
+  const web3 = inst._web3;
+  const wallet = await getWallet();
+  if(/^[1-9]\d*$/.test(safeAccountConfig.threshold)) {
+    safeAccountConfig.threshold = parseInt(safeAccountConfig.threshold);
+  }else{
+    console.log("threshold must be a positive integer");
+    process.exit();
+  }
+  for (const owner of safeAccountConfig.owners) {
+    if(web3.utils.isAddress(owner)){
+      continue;
+    }
+    console.log("owner", owner, "is not a valid address");
+    process.exit()
+  }
+  if(safeAccountConfig.owners.length < safeAccountConfig.threshold){
+    console.log("The number of owners must be greater than or equal to the threshold");
+    process.exit();
+  }
+  let config = {
+    provider: web3.currentProvider.clientUrl,
+    signer: wallet.secret,
+    predictedSafe: {safeAccountConfig: safeAccountConfig}
+  }
+  if(saltNonce){
+    if(!config.predictedSafe.safeDeploymentConfig){
+      config.predictedSafe.safeDeploymentConfig = {};
+    }
+    config.predictedSafe.safeDeploymentConfig.saltNonce = saltNonce;
+  }
+  if(version){
+    if(!config.predictedSafe.safeDeploymentConfig){
+      config.predictedSafe.safeDeploymentConfig = {};
+    }
+    config.predictedSafe.safeDeploymentConfig.safeVersion = version;
+  }
+  if(isL1SafeSingleton){
+    config.isL1SafeSingleton = true;
+  }
+  let safeKit = null;
+  safeKit = await Safe.init(config)
+  console.log(`The ${await safeKit.getAddress()} safe contract will be released on the ${await web3.eth.getChainId()} chain`);
+  const deployTx = await safeKit.createSafeDeploymentTransaction();
+  console.log("generate transaction:")
+  console.log(JSON.stringify(deployTx, null, 2));
+  const walletClient = await safeKit.getSafeProvider().getExternalSigner();
+  const deployTxHash = await walletClient.sendTransaction({
+    to: deployTx.to,
+    value: BigInt(deployTx.value),
+    data: deployTx.data,
+  });
+  console.log("transaction hash:", deployTxHash);
+  const privateClient = await safeKit.getSafeProvider().getExternalProvider();
+  const transactionReceipt = await privateClient.waitForTransactionReceipt({
+    hash: deployTxHash
+  })
+  console.log("transactionReceipt: ", JSON.stringify(transactionReceipt, customReplacer, 2));
+  console.log("Deployment Success.");
+
+}
+
+program
+  .command("generateSafe")
+  .description("Generate a new Safe contract address")
+  .argument('<threshold number>', 'The number of signatures required to execute a Safe transaction.')
+  .argument('<saltNonce>', 'The salt nonce to use. Changing this value will update the predicted Safe account address.')
+  .argument('<owners...>', 'The addresses of the owners of the Safe.')
+  .action(async (threshold, saltNonce, owners) => {
+    await sleep(0);
+    const safeAccountConfig = {
+      threshold,
+      owners
+    }
+    await generateSafe(safeAccountConfig, saltNonce, null, null);
+  })
+
+program
+  .command("generateKnownSafe")
+  .description("Generate a safe on this chain that has already been generated on other chains.")
+  .argument("<safeAddress address>", "Safe contracts that have been deployed on other chains.")
+  .argument("<chainId number>", "The id of the deployment chain.")
+  .action(async (safeAddress, chainId) => {
+    await sleep(0);
+    const web3 = inst._web3;
+    if(web3.utils.isAddress(safeAddress)) {
+      safeAddress = web3.utils.toChecksumAddress(safeAddress);
+    }
+    console.log(`Get the ${safeAddress} contract information from the ${chainId} chain`);
+    const apiKit = new SafeApiKit({
+      chainId: chainId
+    });
+    const creationInfo = await apiKit.getSafeCreationInfo(safeAddress);
+    const safeInfo = await apiKit.getSafeInfo(safeAddress);
+    const createParams = {};
+    creationInfo.dataDecoded.parameters.forEach((param) => {
+      createParams[param.name.replace(/^_+/, "")] = param.value;
+    });
+    const version = safeInfo.version.split("+")[0];
+    const saltNonce = creationInfo.saltNonce;
+    
+    // 获取safe账号的逻辑合约地址
+    const singletonAddress = creationInfo.singleton;
+    // 获取polygon service记录的singletons信息数组
+    const serviceSingletons = await apiKit.getServiceSingletonsInfo();
+    // 通过singletonAddress获取singleton的信息，可能获取不到，得到undefined
+    const singleton = serviceSingletons.find((singleton) => singleton.address === singletonAddress);
+    // 如果获取不到singleton，可能逻辑合约是sale.sol，所以默认isL1SafeSingleton为true
+    let isL1SafeSingleton = true;
+    if(singleton) {
+      isL1SafeSingleton = !singleton.l2;
+    }
+
+    await generateSafe(createParams, saltNonce, version, isL1SafeSingleton);
+  })
+
+program
+  .command("safeTransfer")
+  .description("Transfer tokens from safe address to target address")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<Destination address>', 'Destination address')
+  .argument('<amount>', 'transfer amount')
+  .action(async (safeAddress, destination, amount) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    const nonce = await safeKit.getNonce();
+    let tx = await getTx(safeAddress, destination, amount, nonce, "");
+    tx = { ...tx, data: ""}
+    console.log("tx:", tx);
+    let safeTx = await safeKit.createTransaction({ transactions: [tx] });
+    const isOwner = await safeKit.isOwner(wallet.address);
+    if (!isOwner) {
+      console.log("current address is not owner of this safe contract");
+      process.exit();
+    }
+    try {
+      safeTx = await safeKit.signTransaction(safeTx);
+      console.log("safeTx:", safeTx);
+      safeTx.signatures = Object.fromEntries(safeTx.signatures);
+      fs.writeFileSync("./safeTransaction.json", JSON.stringify(safeTx, null, 2));
+      console.log("safeTransaction.json has been generated successfully.")
+    } catch (error) {
+      throw error;
+    }
+  })
+
+program
+  .command("safeContractTx")
+  .description("Deploy a contract from safe address")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<abi file>', 'abi file')
+  .argument("<contract address>", "the contract address after deploymentcontract address")
+  .argument("<method name>", "the method name for invoking the contract")
+  .argument("[args...]", "the args for invoking the contract")
+  .action(async (safeAddress, abi, contract, method, args) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    const tx = {
+      to: contract,
+      data: await encodeCallData(abi, method, args),
+      value: '0'
+    }
+    console.log("tx:", tx);
+    let safeTx = await safeKit.createTransaction({ transactions: [tx] });
+    console.log("generate safe transaction:", safeTx);
+    const isOwner = await safeKit.isOwner(wallet.address);
+    if (!isOwner) {
+      console.log("current address is not owner of this safe contract");
+      process.exit();
+    }
+    try {
+      safeTx = await safeKit.signTransaction(safeTx);
+      console.log("safeTx:", safeTx);
+      safeTx.signatures = Object.fromEntries(safeTx.signatures);
+      fs.writeFileSync("./safeTransaction.json", JSON.stringify(safeTx, null, 2));
+      console.log("safeTransaction.json has been generated successfully.")
+    } catch (error) {
+      throw error;
+    }
+  })
+
+program
+  .command("safeConfirm")
+  .description("Confirm safe transaction")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<safeTxFile file>', 'safe transaction file')
+  .action(async (safeAddress, safeTxFile) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    let _json = getFile(safeTxFile);
+    let safeTx = {
+      ..._json,
+      signatures: new Map(Object.entries(_json.signatures)),
+    }
+    console.log("before confirm:", safeTx);
+    safeTx = await safeKit.signTransaction(safeTx);
+    console.log("after confirm:", safeTx);
+    try {
+      safeTx.signatures = Object.fromEntries(safeTx.signatures);
+      fs.writeFileSync("./safeTransaction.json", JSON.stringify(safeTx, null, 2));
+      console.log("safeTransaction.json has been generated successfully.")
+    } catch (error) {
+      throw error;
+    }
+  })
+
+program
+  .command("executeSafeTx")
+  .description("Execute signature-completed safe transactions")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<safeTxFile file>', 'safe transaction file')
+  .action(async (safeAddress, safeTxFile) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    let _json = getFile(safeTxFile);
+    let safeTx = {
+      ..._json,
+      signatures: new Map(Object.entries(_json.signatures)),
+    }
+    console.log("safeTx:", safeTx);
+    const owners = await safeKit.getOwners();
+    let validSign = [];
+    owners.map((owner) => {
+      owner = owner.toLowerCase();
+      if (safeTx.signatures.get(owner)) {
+        validSign.push(safeTx.signatures.get(owner));
+      }
+    })
+    console.log("validSign:", validSign);
+    const threshold = await safeKit.getThreshold()
+    console.log(`threshold: ${threshold}, Valid Signature: ${validSign.length}`);
+    if (validSign.length < threshold) {
+      console.log("validSign length is less than threshold");
+      process.exit();
+    }
+    try {
+      const txResponse = await safeKit.executeTransaction(safeTx);
+      console.log("txResponse: ", txResponse);
     } catch (error) {
       throw error;
     }
