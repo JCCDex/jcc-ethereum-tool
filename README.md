@@ -248,3 +248,98 @@ jcc-ethereum-tool safeConfirm safeAddress safeTxFile
 // executeSafeTx <safeAddress address> <safeTxFile file>
 jcc-ethereum-tool executeSafeTx safeAddress safeTxFile
 ```
+
+- 为 safe account 添加守卫(guard)功能
+
+```javascript
+// 提供guard功能，为safe account提供交易保护机制; 需要自己提供安全可靠的符合safe guard要求的guard合约。
+// enableSafeGuardTx <safeAddress address> <guardAddress address>
+jcc-ethereum-tool enableSafeGuardTx safeAddress guardAddress
+```
+
+- 为 safe account 关闭(移除)守卫(guard)功能
+
+```javascript
+// disableSafeGuardTx <safeAddress address> <guardAddress address>
+jcc-ethereum-tool disableSafeGuardTx safeAddress guardAddress
+```
+
+- 得到 safe account 设置的 guard address
+
+```javascript
+// getSafeGuard <safeAddress address>
+// 返回safe guard contract adress
+// 如果返回是0x0000000000000000... 说明没有设置 safe guard
+jcc-ethereum-tool getSafeGuard safeAddress
+```
+
+- safe 功能使用说明
+
+```javascript
+// 当前操作均在polygon链上操作
+// 1、如果你没有safe account，则需要先在链上生成部署一个safe account (safe proxy合约)
+// threshold: 设置的门槛
+// saltNonce: 当threshold与owners都一样时，这个参数确保生成的safe account 有所不同
+// owners: 所有者们，可以对提案签名
+jcc-ethereum-tool generateSafe threshold saltNonce owner1 owner2
+
+// 2、如果你需要一个提案可以通过safeTransfer和safeContractTx生成一个safeTransaction.json
+// safeTransaction.json 提案文件，里面有收集的签名数组和交易内容。
+jcc-ethereum-tool safeTransfer safeAddress destination amount ||
+jcc-ethereum-tool safeContractTx safeAddress abi contract method arg1 arg2
+
+// 3、获得到了safeTransaction.json可以让其他owner签署交易
+jcc-ethereum-tool safeConfirm safeAddress safeTxFile
+
+// 4、safeTransaction.json收集到足够的签名可以通过executeSafeTx执行交易
+jcc-ethereum-tool enableSafeGuardTx safeAddress guardAddress
+
+// 5、你可以通过添加 safe gurad 保护你的交易; 当然,这需要收集其他owner同意
+jcc-ethereum-tool enableSafeGuardTx safeAddress guardAddress
+
+// 6、你也可以关闭你的 safe gurad, 这也需要收集其他owner同意
+jcc-ethereum-tool disableSafeGuardTx safeAddress guardAddress
+
+// 7、获取你设置的 safe gurad 的合约地址
+jcc-ethereum-tool getSafeGuard safeAddress
+
+----------------- 添加safe gurad 事例 ------------------
+/**
+先生成开启(设置)safe guard的提案。
+0x7C1fC34898660aF91dC39182fa22A73D953073FC是一个safe account。
+0xc0d787711f06bd555db1e1d44b0723277068894a是一个guard contract address;
+Safe Guard 可以在 Safe 交易前后进行检查。交易前检查可以在交易执行前以编程方式检查相应交易的所有参数。
+交易后检查在交易执行结束时调用，可用于检查 Safe 的最终状态。
+所以guard需要自己开发或者寻找的安全可靠的safe guard contract, safe 官方并没有提供相关合约。
+0xc0d787711f06bd555db1e1d44b0723277068894a是通过官方提供的示例在polygon部署的guard合约。
+https://github.com/gnosisguild/zodiac-guard-scope
+实际开发过程中可以基于其开发。
+*/
+./src/jcc-ethereum-tool enableSafeGuardTx 0x7C1fC34898660aF91dC39182fa22A73D953073FC 0xc0d787711f06bd555db1e1d44b0723277068894a
+
+// 然后需要收集签名执行交易, 这里不做演示。
+// 添加了 0xc0d787711f06bd555db1e1d44b0723277068894a，相当于给 0x7C1fC34898660aF91dC39182fa22A73D953073FC 添加了白名单
+// 执行提案时, 会根据白名单拒绝执行提案，比如原生币种转账。
+./src/jcc-ethereum-tool safeTransfer 0x7C1fC34898660aF91dC39182fa22A73D953073FC 0x646672C0aAC59B26499D971741e94bAd8d20D710 0.1
+./src/jcc-ethereum-tool executeSafeTx 0x7C1fC34898660aF91dC39182fa22A73D953073FC ./safeTransaction.json
+// 会报Target address is not allowed
+
+// 所以需要允许对方是0x646672C0aAC59B26499D971741e94bAd8d20D710的提案通过
+./src/jcc-ethereum-tool abi ./ScopeGuard.json 0xc0d787711f06bd555db1e1d44b0723277068894a setTargetAllowed 0x646672C0aAC59B26499D971741e94bAd8d20D710 true
+// ScopeGuard.json这个是0xc0d787711f06bd555db1e1d44b0723277068894a的abi文件
+// setTargetAllowed 设置target白名单的函数
+
+// 再执行提案，依旧报错
+./src/jcc-ethereum-tool executeSafeTx 0x7C1fC34898660aF91dC39182fa22A73D953073FC ./safeTransaction.json
+// 会报Cannot send ETH to this target
+// 其实是不允许原生币种转账
+
+// 所以还需要允许向0x646672C0aAC59B26499D971741e94bAd8d20D710进行原生币种转账
+./src/jcc-ethereum-tool abi ./ScopeGuard.json 0xc0d787711f06bd555db1e1d44b0723277068894a setValueAllowedOnTarget 0x646672C0aAC59B26499D971741e94bAd8d20D710 true
+
+// 再执行提案，提案执行成功
+./src/jcc-ethereum-tool executeSafeTx 0x7C1fC34898660aF91dC39182fa22A73D953073FC ./safeTransaction.json
+
+// 可以通过关闭其safe guard功能，取消这个功能, 再开启这个功能并且地址还是原先地址，则恢复原先配置。
+// 这里不做演示
+```

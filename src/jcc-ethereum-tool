@@ -10,6 +10,7 @@ const eth_ens_namehash = require('eth-ens-namehash');
 const { create2ContractAddress } = require("web3-eth-contract");
 const Safe = require("@safe-global/protocol-kit").default;
 const SafeApiKit = require('@safe-global/api-kit').default;
+var readlineSync = require("readline-sync");
 
 const program = new Command();
 
@@ -249,6 +250,9 @@ function handleArgs(args) {
       // 如果传入的是bignumber命令，需要转换成字符串
       if(arg instanceof BigNumber) {
         return arg.toString();
+      }
+      if(arg == "true" || arg == "false") {
+        return Boolean(arg);
       }
       return arg;
     } catch (error) {
@@ -717,6 +721,92 @@ program
   })
 
 program
+  .command("enableSafeGuardTx")
+  .description("Enable safe guard transaction")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<guardAddress address>', 'guard address')
+  .action(async (safeAddress, guardAddress) => {
+    await sleep(0);
+    const reliable = readlineSync.question("Please make sure the guard contract is safe and reliable!(y/n)");
+    if (reliable != 'n'){
+      const wallet = await getWallet();
+      const safeKit = await Safe.init({
+        provider: inst._web3.currentProvider.clientUrl,
+        signer: wallet.secret,
+        safeAddress: safeAddress,
+      });
+      const isOwner = await safeKit.isOwner(wallet.address);
+      if (!isOwner) {
+        console.log("current address is not owner of this safe contract");
+        process.exit();
+      }
+      let safeTx = await safeKit.createEnableGuardTx(guardAddress);
+      try {
+        safeTx = await safeKit.signTransaction(safeTx);
+        console.log("safeTx:", safeTx);
+        safeTx.signatures = Object.fromEntries(safeTx.signatures);
+        fs.writeFileSync("./safeTransaction.json", JSON.stringify(safeTx, null, 2));
+        console.log("safeTransaction.json has been generated successfully.")
+      } catch (error) {
+        throw error;
+      }
+    } else {
+      console.log("exit")
+      process.exit();
+    }
+  })
+
+program
+  .command("disableSafeGuardTx")
+  .description("Disable safe guard transaction")
+  .argument('<safeAddress address>', 'safe address')
+  .argument('<guardAddress address>', 'guard address')
+  .action(async (safeAddress, guardAddress) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    const isOwner = await safeKit.isOwner(wallet.address);
+    if (!isOwner) {
+      console.log("current address is not owner of this safe contract");
+      process.exit();
+    }
+    let safeTx = await safeKit.createDisableGuardTx(guardAddress);
+    try {
+      safeTx = await safeKit.signTransaction(safeTx);
+      console.log("safeTx:", safeTx);
+      safeTx.signatures = Object.fromEntries(safeTx.signatures);
+      fs.writeFileSync("./safeTransaction.json", JSON.stringify(safeTx, null, 2));
+      console.log("safeTransaction.json has been generated successfully.")
+    } catch (error) {
+      throw error;
+    }
+  })
+
+program
+  .command("getSafeGuard")
+  .description("Get safe guard")
+  .argument('<safeAddress address>', 'safe address')
+  .action(async (safeAddress) => {
+    await sleep(0);
+    const wallet = await getWallet();
+    const safeKit = await Safe.init({
+      provider: inst._web3.currentProvider.clientUrl,
+      signer: wallet.secret,
+      safeAddress: safeAddress,
+    });
+    const isOwner = await safeKit.isOwner(wallet.address);
+    if (!isOwner) {
+      console.log("current address is not owner of this safe contract");
+      process.exit();
+    }
+    console.log("current guard address:", await safeKit.getGuard());
+  })
+
+program
   .command("safeConfirm")
   .description("Confirm safe transaction")
   .argument('<safeAddress address>', 'safe address')
@@ -784,7 +874,13 @@ program
       const txResponse = await safeKit.executeTransaction(safeTx);
       console.log("txResponse: ", txResponse);
     } catch (error) {
-      throw error;
+      if (error.shortMessage) {
+        console.log(error.shortMessage)
+      } else {
+        console.log(error)
+        console.log("execute safe transaction fail");
+      }
+      process.exit();
     }
   })
 
