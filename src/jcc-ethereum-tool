@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const vm = require('vm');
 const { Command } = require("commander");
 const packageJson = require("../package.json");
 const { importToKeystore, processCreateWallet, saveKeystore, getWalletFromKeystore } = require("./jcc-ethereum-keystore");
@@ -232,16 +233,22 @@ const shouldEval = (arg) => {
 }
 
 function handleArgs(args) {
-  // 该变量是为用户在外部传入chain3的函数调用 eval(getMethodCall()) 时用的
-  let web3 = inst._web3
-  let namehash = eth_ens_namehash.hash
+  // Use a vm sandbox with a null-prototype object so that require/process/fs
+  // are not accessible, preventing arbitrary code execution via injected args.
+  const sandbox = Object.create(null);
+  sandbox.BigNumber = BigNumber;
+  sandbox.namehash = eth_ens_namehash.hash;
+  sandbox.web3 = { utils: inst._web3 ? inst._web3.utils : {} };
+  vm.createContext(sandbox);
 
   return args.map((arg) => {
     try {
       if ((arg.startsWith("{") && arg.endsWith("}")) || (arg.startsWith("[") && arg.endsWith("]"))) {
         return JSON.parse(arg);
       }
-      arg = shouldEval(arg) ? eval(arg) : arg;
+      if (shouldEval(arg)) {
+        arg = vm.runInContext(arg, sandbox, { timeout: 1000 });
+      }
       // 如果传入的是bignumber命令，需要转换成字符串
       if(arg instanceof BigNumber) {
         return arg.toString();

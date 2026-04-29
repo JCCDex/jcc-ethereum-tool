@@ -74,7 +74,7 @@ async function getWalletFromKeystore(_file, _password) {
         secret: w.getPrivateKeyString()
       };
     } catch (error) {
-      console.log("Parse keystore file fail, check and correct it", e);
+      console.log("Parse keystore file fail, check and correct it", error);
       process.exit();
     }
   } else {
