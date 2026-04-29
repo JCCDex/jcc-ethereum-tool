@@ -24,11 +24,18 @@ function processCreateWallet() {
   process.exit(0);
 }
 
+function resolvePassword(explicit) {
+  if (explicit) return explicit;
+  if (process.env.JCC_KEYSTORE_PASSWORD)
+    return process.env.JCC_KEYSTORE_PASSWORD;
+  return readlineSync.question("Password:", { hideEchoBack: true });
+}
+
 function saveKeystore() {
   var w = Wallet.generate();
   var f = w.getV3Filename();
 
-  var password = readlineSync.question("Password:", { hideEchoBack: true });
+  var password = resolvePassword(null);
 
   w.toV3(password).then(v3 => {
     fs.writeFileSync(f, JSON.stringify(v3, null, 2), "utf-8");
@@ -50,7 +57,7 @@ function importToKeystore() {
   }
   var w = Wallet.fromPrivateKey(hexToBytes(secret));
   var f = w.getV3Filename();
-  var password = readlineSync.question("Password:", { hideEchoBack: true });
+  var password = resolvePassword(null);
   w.toV3(password).then(v3 => {
     fs.writeFileSync(f, JSON.stringify(v3, null, 2), "utf-8");
     console.log("\n", f, "saved");
@@ -62,12 +69,7 @@ async function getWalletFromKeystore(_file, _password) {
   if (fs.existsSync(_file)) {
     try {
       var ks = JSON.parse(fs.readFileSync(_file, "utf-8"));
-      var password;
-      if (!_password) {
-        password = readlineSync.question("Password:", { hideEchoBack: true });
-      } else {
-        password = _password;
-      }
+      var password = resolvePassword(_password);
       const w = await Wallet.fromV3(ks, password);
       return {
         address: w.getAddressString(),
